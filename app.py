@@ -1,48 +1,6 @@
 """Backend Flask pour le Détecteur d'Accords Web (version iPhone/PWA)."""
 
 import os
-import sys
-from types import ModuleType
-
-# Remplace numba par un stub no-op AVANT tout import de librosa.
-# numba est incompatible Python 3.14 ('get_call_template' crash à l'import).
-# Librosa détecte l'absence de numba et utilise le fallback numpy pur.
-os.environ['NUMBA_DISABLE_JIT'] = '1'
-
-class _NumbaStub(ModuleType):
-    """Stub no-op pour numba (incompatible Python 3.14).
-    Couvre les attributs scalaires et les décorateurs utilisés par librosa."""
-
-    # Attributs string attendus par librosa (ex: numba.__version__.endswith(...))
-    __version__  = '0.59.0'
-    __file__     = ''
-    __path__     = []
-    __package__  = 'numba'
-
-    # Faux types numba (float32, int32, etc.) utilisés dans les signatures
-    class _FakeType:
-        def __getitem__(self, _): return self
-    float32 = _FakeType()
-    float64 = _FakeType()
-    int32   = _FakeType()
-    int64   = _FakeType()
-    complex64  = _FakeType()
-    complex128 = _FakeType()
-    boolean = _FakeType()
-
-    def __getattr__(self, name):
-        # Retourne un décorateur no-op pour @jit, @guvectorize, @vectorize…
-        def noop(*args, **kwargs):
-            if args and callable(args[0]) and not isinstance(args[0], (str, list, tuple)):
-                return args[0]          # @numba.jit(fn) sans arguments
-            return lambda fn: fn        # @numba.jit(...)(fn)
-        return noop
-
-_stub = _NumbaStub('numba')
-for _mod in ('numba', 'numba.core', 'numba.np', 'numba.np.ufunc',
-             'numba.types', 'numba.typed', 'numba.extending'):
-    sys.modules[_mod] = _stub
-
 import uuid
 import tempfile
 import threading
