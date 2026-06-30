@@ -1,6 +1,9 @@
 """Backend Flask pour le Détecteur d'Accords Web (version iPhone/PWA)."""
 
 import os
+# Désactive le JIT numba AVANT tout import librosa (incompatible Python 3.14)
+os.environ.setdefault('NUMBA_DISABLE_JIT', '1')
+
 import uuid
 import tempfile
 import threading

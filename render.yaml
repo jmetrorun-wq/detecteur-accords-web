@@ -5,3 +5,6 @@ services:
     buildCommand: apt-get install -y ffmpeg libsndfile1 && pip install -r requirements.txt
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 180
     plan: free
+    envVars:
+      - key: NUMBA_DISABLE_JIT
+        value: "1"
