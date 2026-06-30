@@ -10,20 +10,38 @@ from types import ModuleType
 os.environ['NUMBA_DISABLE_JIT'] = '1'
 
 class _NumbaStub(ModuleType):
-    """Stub qui absorbe tous les décorateurs numba (@jit, @guvectorize…)."""
+    """Stub no-op pour numba (incompatible Python 3.14).
+    Couvre les attributs scalaires et les décorateurs utilisés par librosa."""
+
+    # Attributs string attendus par librosa (ex: numba.__version__.endswith(...))
+    __version__  = '0.59.0'
+    __file__     = ''
+    __path__     = []
+    __package__  = 'numba'
+
+    # Faux types numba (float32, int32, etc.) utilisés dans les signatures
+    class _FakeType:
+        def __getitem__(self, _): return self
+    float32 = _FakeType()
+    float64 = _FakeType()
+    int32   = _FakeType()
+    int64   = _FakeType()
+    complex64  = _FakeType()
+    complex128 = _FakeType()
+    boolean = _FakeType()
+
     def __getattr__(self, name):
+        # Retourne un décorateur no-op pour @jit, @guvectorize, @vectorize…
         def noop(*args, **kwargs):
-            # Cas décorateur direct  @numba.jit(fn)
-            if args and callable(args[0]) and not isinstance(args[0], str):
-                return args[0]
-            # Cas décorateur avec args  @numba.guvectorize([...], '...')
-            return lambda fn: fn
+            if args and callable(args[0]) and not isinstance(args[0], (str, list, tuple)):
+                return args[0]          # @numba.jit(fn) sans arguments
+            return lambda fn: fn        # @numba.jit(...)(fn)
         return noop
 
-sys.modules['numba'] = _NumbaStub('numba')
-# Sous-modules aussi
-for _sub in ('numba.core', 'numba.np', 'numba.np.ufunc'):
-    sys.modules[_sub] = _NumbaStub(_sub)
+_stub = _NumbaStub('numba')
+for _mod in ('numba', 'numba.core', 'numba.np', 'numba.np.ufunc',
+             'numba.types', 'numba.typed', 'numba.extending'):
+    sys.modules[_mod] = _stub
 
 import uuid
 import tempfile
