@@ -4,16 +4,26 @@ import os
 import sys
 from types import ModuleType
 
-# Bloque numba AVANT tout import librosa — incompatible Python 3.14
+# Remplace numba par un stub no-op AVANT tout import de librosa.
+# numba est incompatible Python 3.14 ('get_call_template' crash à l'import).
+# Librosa détecte l'absence de numba et utilise le fallback numpy pur.
 os.environ['NUMBA_DISABLE_JIT'] = '1'
-try:
-    import numba  # noqa: F401
-except Exception:
-    # Si numba est absent ou cassé, on injecte un stub no-op
-    class _NumbaStub(ModuleType):
-        def __getattr__(self, name):
-            return lambda *a, **kw: (lambda f: f)
-    sys.modules.setdefault('numba', _NumbaStub('numba'))
+
+class _NumbaStub(ModuleType):
+    """Stub qui absorbe tous les décorateurs numba (@jit, @guvectorize…)."""
+    def __getattr__(self, name):
+        def noop(*args, **kwargs):
+            # Cas décorateur direct  @numba.jit(fn)
+            if args and callable(args[0]) and not isinstance(args[0], str):
+                return args[0]
+            # Cas décorateur avec args  @numba.guvectorize([...], '...')
+            return lambda fn: fn
+        return noop
+
+sys.modules['numba'] = _NumbaStub('numba')
+# Sous-modules aussi
+for _sub in ('numba.core', 'numba.np', 'numba.np.ufunc'):
+    sys.modules[_sub] = _NumbaStub(_sub)
 
 import uuid
 import tempfile
