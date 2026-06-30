@@ -101,8 +101,15 @@ async function uploadAndAnalyze(file) {
   fd.append('audio', file);
   try {
     const res = await fetch('/api/analyze', { method: 'POST', body: fd });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? 'Erreur serveur');
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      // Le serveur a renvoyé HTML (erreur 500) — on affiche les 300 premiers caractères
+      throw new Error(`Erreur serveur (${res.status}) :\n${text.replace(/<[^>]+>/g,'').trim().slice(0, 300)}`);
+    }
+    if (!res.ok) throw new Error(data.error ?? `Erreur ${res.status}`);
     applyResults(data);
   } catch (err) {
     alert(`Erreur : ${err.message}`);
