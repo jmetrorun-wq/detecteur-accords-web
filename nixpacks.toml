@@ -1,0 +1,4 @@
+# Configuration Railway/Nixpacks
+# Installe ffmpeg pour le support MP3 (audioread)
+[phases.setup]
+nixPkgs = ["ffmpeg", "libsndfile"]

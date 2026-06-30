@@ -1,0 +1,22 @@
+{
+  "name": "Détecteur d'Accords",
+  "short_name": "Accords",
+  "description": "Détectez les accords de n'importe quelle chanson",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0C0C18",
+  "theme_color": "#1E1E2E",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
