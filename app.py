@@ -1,8 +1,19 @@
 """Backend Flask pour le Détecteur d'Accords Web (version iPhone/PWA)."""
 
 import os
-# Désactive le JIT numba AVANT tout import librosa (incompatible Python 3.14)
-os.environ.setdefault('NUMBA_DISABLE_JIT', '1')
+import sys
+from types import ModuleType
+
+# Bloque numba AVANT tout import librosa — incompatible Python 3.14
+os.environ['NUMBA_DISABLE_JIT'] = '1'
+try:
+    import numba  # noqa: F401
+except Exception:
+    # Si numba est absent ou cassé, on injecte un stub no-op
+    class _NumbaStub(ModuleType):
+        def __getattr__(self, name):
+            return lambda *a, **kw: (lambda f: f)
+    sys.modules.setdefault('numba', _NumbaStub('numba'))
 
 import uuid
 import tempfile
