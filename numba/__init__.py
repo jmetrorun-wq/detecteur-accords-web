@@ -41,3 +41,9 @@ def vectorize(signatures=None, nopython=False, cache=False, target="cpu", **kwar
 
 
 prange = range
+
+
+def stencil(*args, **kwargs):
+    if args and callable(args[0]):
+        return args[0]
+    return lambda f: f
