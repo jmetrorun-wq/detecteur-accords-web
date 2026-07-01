@@ -106,8 +106,15 @@ async function uploadAndAnalyze(file) {
     try {
       data = JSON.parse(text);
     } catch {
-      // Le serveur a renvoyé HTML (erreur 500) — on affiche les 300 premiers caractères
-      throw new Error(`Erreur serveur (${res.status}) :\n${text.replace(/<[^>]+>/g,'').trim().slice(0, 300)}`);
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        throw new Error(`Le serveur est temporairement indisponible (${res.status}).\nVeuillez réessayer dans quelques instants.`);
+      }
+      const clean = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                        .replace(/<[^>]+>/g, '')
+                        .replace(/\s+/g, ' ')
+                        .trim()
+                        .slice(0, 200);
+      throw new Error(`Erreur serveur (${res.status}) :\n${clean}`);
     }
     if (!res.ok) throw new Error(data.error ?? `Erreur ${res.status}`);
     applyResults(data);
