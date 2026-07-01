@@ -1,3 +1,5 @@
+import os
+import subprocess
 import numpy as np
 import librosa
 from scipy.ndimage import median_filter
@@ -197,6 +199,24 @@ def _merge_consecutive(items: list[tuple]) -> list[dict]:
     return merged
 
 
+def _to_wav_if_needed(filepath: str) -> tuple[str, bool]:
+    """Convertit m4a/aac en wav via ffmpeg si nécessaire. Retourne (chemin, converti)."""
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext not in ('.m4a', '.aac'):
+        return filepath, False
+    wav_path = filepath + '_tmp.wav'
+    result = subprocess.run(
+        ['ffmpeg', '-y', '-i', filepath,
+         '-ar', '22050', '-ac', '1', '-f', 'wav', wav_path],
+        capture_output=True, timeout=120,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f'Conversion ffmpeg échouée : {result.stderr.decode(errors="replace")[-300:]}'
+        )
+    return wav_path, True
+
+
 def detect_chords(
     filepath: str,
     hop_length: int = 512,
@@ -212,7 +232,15 @@ def detect_chords(
             progress_callback(v)
 
     cb(5)
-    y, sr = librosa.load(filepath, sr=22050, mono=True)
+    load_path, converted = _to_wav_if_needed(filepath)
+    try:
+        y, sr = librosa.load(load_path, sr=22050, mono=True)
+    finally:
+        if converted:
+            try:
+                os.unlink(load_path)
+            except OSError:
+                pass
     duration = float(len(y) / sr)
     cb(18)
 

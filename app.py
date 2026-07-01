@@ -58,7 +58,10 @@ def analyze():
     try:
         chords, duration, key_en, key_fr, tempo = detect_chords(filepath)
     except Exception as exc:
-        os.unlink(filepath)
+        try:
+            os.unlink(filepath)
+        except OSError:
+            pass
         return jsonify({'error': f'Erreur d\'analyse : {exc}'}), 500
 
     chords_out = [
