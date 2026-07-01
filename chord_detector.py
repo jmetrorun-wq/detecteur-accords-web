@@ -3,6 +3,7 @@ import subprocess
 import numpy as np
 import librosa
 from scipy.ndimage import median_filter
+from scipy.signal import resample_poly
 
 NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
@@ -199,6 +200,34 @@ def _merge_consecutive(items: list[tuple]) -> list[dict]:
     return merged
 
 
+def _estimate_tempo(y: np.ndarray, sr: int, hop_length: int) -> tuple[float, np.ndarray]:
+    """Estimation du tempo par autocorrélation sur l'enveloppe d'onset (pur numpy)."""
+    # Énergie par frame
+    n_frames = len(y) // hop_length
+    energy = np.array([
+        np.sum(y[i * hop_length:(i + 1) * hop_length] ** 2)
+        for i in range(n_frames)
+    ], dtype=np.float32)
+    onset_env = np.maximum(0.0, np.diff(energy, prepend=energy[0]))
+
+    fps = sr / hop_length
+    min_lag = max(1, int(60 * fps / 200))  # 200 BPM max
+    max_lag = min(int(60 * fps / 50), len(onset_env) - 1)  # 50 BPM min
+
+    if min_lag >= max_lag:
+        tempo_bpm = 120.0
+        period = int(fps * 60 / tempo_bpm)
+    else:
+        corr = np.correlate(onset_env, onset_env, mode='full')
+        corr = corr[len(corr) // 2:]
+        best_lag = min_lag + int(np.argmax(corr[min_lag:max_lag + 1]))
+        tempo_bpm = 60.0 * fps / best_lag
+        period = best_lag
+
+    beat_frames = np.arange(period // 2, n_frames, period, dtype=int)
+    return float(tempo_bpm), beat_frames
+
+
 def _to_wav_if_needed(filepath: str) -> tuple[str, bool]:
     """Convertit m4a/aac en wav via ffmpeg si nécessaire. Retourne (chemin, converti)."""
     ext = os.path.splitext(filepath)[1].lower()
@@ -244,26 +273,28 @@ def detect_chords(
     duration = float(len(y) / sr)
     cb(18)
 
-    # Beat tracking
-    tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, hop_length=hop_length)
-    tempo_bpm = float(np.asarray(tempo).ravel()[0])
+    # Tempo via autocorrélation (évite librosa.beat.beat_track qui utilise guvectorize)
+    tempo_bpm, beat_frames = _estimate_tempo(y, sr, hop_length)
     cb(30)
 
-    # Séparation harmonique / percussive :
-    # margin élevé = séparation stricte → on ne garde que les sons tenus (accords)
-    # et on écarte mélodie + percussions
-    y_harmonic, _ = librosa.effects.hpss(y, margin=4.0)
+    # HPSS via filtre médian sur le spectrogramme (évite librosa.effects.hpss + guvectorize)
+    S = librosa.stft(y, hop_length=hop_length)
+    S_mag = np.abs(S)
+    H_mag = median_filter(S_mag, size=(1, 31))
+    y_harmonic = librosa.istft(H_mag * np.exp(1j * np.angle(S)), hop_length=hop_length)
     cb(48)
 
-    # Chroma CQT uniquement sur la composante harmonique
-    chroma = librosa.feature.chroma_cqt(
-        y=y_harmonic, sr=sr, hop_length=hop_length, bins_per_octave=36, norm=2,
+    # Chroma STFT (évite chroma_cqt qui utilise CQT avec resampling numba)
+    chroma = librosa.feature.chroma_stft(
+        y=y_harmonic, sr=sr, hop_length=hop_length, norm=2,
     )
     cb(62)
 
     # Synchronisation sur les temps (médiane sur chaque temps)
+    n_frames = chroma.shape[1]
+    beat_frames = beat_frames[beat_frames < n_frames]
     chroma_sync = librosa.util.sync(chroma, beat_frames, aggregate=np.median)
-    beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=hop_length)
+    beat_times = beat_frames * hop_length / sr
     cb(70)
 
     # Détection de tonalité
