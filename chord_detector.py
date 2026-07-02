@@ -252,7 +252,7 @@ def detect_chords(
     progress_callback=None,
 ) -> tuple[list[dict], float, str, str, float]:
     """
-    Détecte les accords avec synchronisation sur les temps du morceau.
+    Détecte les accords avec synchronisation sur les mesures du morceau.
 
     Retourne : (chords, duration, key_en, key_fr, tempo_bpm)
     """
@@ -295,20 +295,24 @@ def detect_chords(
     )
     cb(62)
 
-    # Synchronisation sur les temps (médiane sur chaque temps)
+    # Regroupement par mesure (4 temps = 1 mesure, hypothèse 4/4 standard) :
+    # un accord détecté par temps donnait l'impression de suivre la mélodie
+    # note par note plutôt que de tenir des accords stables sur la phrase.
     n_frames = chroma.shape[1]
     beat_frames = beat_frames[beat_frames < n_frames]
-    chroma_sync = librosa.util.sync(chroma, beat_frames, aggregate=np.median)
-    beat_times = beat_frames * hop_length / sr
+    BEATS_PER_BAR = 4
+    bar_frames = beat_frames[::BEATS_PER_BAR]
+    chroma_sync = librosa.util.sync(chroma, bar_frames, aggregate=np.median)
+    bar_times = bar_frames * hop_length / sr
     cb(70)
 
     # Détection de tonalité
     key_en, key_fr = detect_key(chroma)
     cb(75)
 
-    # Correspondance gabarits beat par beat
+    # Correspondance gabarits mesure par mesure
     raw: list[tuple[float, str, float]] = []
-    for t, frame in zip(beat_times, chroma_sync.T):
+    for t, frame in zip(bar_times, chroma_sync.T):
         chord, score = _match_frame(frame.astype(np.float32))
         raw.append((float(t), chord, score))
 
@@ -321,8 +325,10 @@ def detect_chords(
     if merged:
         merged[-1]['end'] = duration
 
-    # Supprimer les segments trop courts (< 0.2 s) en les fusionnant au voisin
-    MIN_DUR = 0.20
+    # Supprimer les segments trop courts en les fusionnant au voisin (évite
+    # les sursauts d'un seul temps qui donnent l'impression de suivre la
+    # mélodie plutôt que de tenir des accords stables)
+    MIN_DUR = 0.60
     cleaned: list[dict] = []
     for seg in merged:
         seg_dur = seg['end'] - seg['time']
