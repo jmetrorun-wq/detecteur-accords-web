@@ -66,7 +66,6 @@ def _analyze_and_respond(filepath: str, file_id: str, extra: Optional[dict] = No
             'time':   round(c['time'], 3),
             'end':    round(c['end'], 3),
             'chord':  c['chord'],
-            'score':  round(c['score'], 3),
             'color':  chord_color(c['chord']),
             'type':   chord_type_name(c['chord']),
         }

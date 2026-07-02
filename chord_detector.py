@@ -1,77 +1,35 @@
 import os
 import subprocess
+
 import numpy as np
 import librosa
-from scipy.ndimage import median_filter
-from scipy.signal import resample_poly
+from madmom.audio.chroma import DeepChromaProcessor
+from madmom.features.chords import DeepChromaChordRecognitionProcessor
 
 NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
-# ── Gabarits d'accords ────────────────────────────────────────────────
-
-_TEMPLATES: dict[str, np.ndarray] = {}
-
-def _build_templates() -> None:
-    intervals = {
-        '':     [0, 4, 7],
-        'm':    [0, 3, 7],
-        '7':    [0, 4, 7, 10],
-        'm7':   [0, 3, 7, 10],
-        'maj7': [0, 4, 7, 11],
-        'sus2': [0, 2, 7],
-        'sus4': [0, 5, 7],
-        'dim':  [0, 3, 6],
-        'aug':  [0, 4, 8],
-        'add9': [0, 4, 7, 14],
-    }
-    for i, note in enumerate(NOTES):
-        for quality, ivs in intervals.items():
-            tpl = np.zeros(12, dtype=np.float32)
-            for iv in ivs:
-                tpl[(i + iv) % 12] = 1.0
-            norm = np.linalg.norm(tpl)
-            _TEMPLATES[f'{note}{quality}'] = tpl / norm
-
-_build_templates()
-
 # ── Couleurs et noms ──────────────────────────────────────────────────
+# Le moteur de détection (madmom) ne reconnaît que les accords
+# majeur/mineur ; ces tables ne couvrent donc que '' (majeur), 'm'
+# (mineur) et 'N' (pas d'accord).
 
 CHORD_TYPE_NAMES: dict[str, str] = {
-    'add9': 'Ajouté 9ème',
-    'maj7': 'Majeur 7ème',
-    'm7':   'Mineur 7ème',
-    'sus2': 'Suspendu 2nde',
-    'sus4': 'Suspendu 4te',
-    'dim':  'Diminué',
-    'aug':  'Augmenté',
-    '7':    'Dominante 7ème',
-    'm':    'Mineur',
-    '':     'Majeur',
-    'N':    '',
+    'm': 'Mineur',
+    '':  'Majeur',
+    'N': '',
 }
 
 CHORD_COLORS: dict[str, str] = {
-    'add9': '#4DB6AC',
-    'maj7': '#80DEEA',
-    'm7':   '#CE93D8',
-    'sus2': '#FFD54F',
-    'sus4': '#FFD54F',
-    'dim':  '#FF8A65',
-    'aug':  '#B39DDB',
-    '7':    '#A5D6A7',
-    'm':    '#EF9A9A',
-    '':     '#4FC3F7',
-    'N':    '#555555',
+    'm': '#EF9A9A',
+    '':  '#4FC3F7',
+    'N': '#555555',
 }
 
 
 def chord_quality(chord: str) -> str:
     if chord == 'N':
         return 'N'
-    for suffix in ('add9', 'maj7', 'm7', 'sus2', 'sus4', 'dim', 'aug', '7', 'm'):
-        if chord.endswith(suffix):
-            return suffix
-    return ''
+    return 'm' if chord.endswith('m') else ''
 
 
 def chord_color(chord: str) -> str:
@@ -80,11 +38,6 @@ def chord_color(chord: str) -> str:
 
 def chord_type_name(chord: str) -> str:
     return CHORD_TYPE_NAMES.get(chord_quality(chord), '')
-
-
-def format_time(seconds: float) -> str:
-    s = int(seconds)
-    return f'{s // 60}:{s % 60:02d}'
 
 
 def transpose_chord(chord: str, semitones: int) -> str:
@@ -98,28 +51,13 @@ def transpose_chord(chord: str, semitones: int) -> str:
     return chord
 
 
-def chord_tones(chord: str) -> list[int]:
-    """Retourne les indices de notes (0-11) composant l'accord."""
-    if chord == 'N':
-        return []
-    for i, note in enumerate(NOTES):
-        if chord.startswith(note) and (len(chord) == len(note) or chord[len(note)] not in '#'):
-            quality = chord[len(note):]
-            suffix_intervals = {
-                '':     [0, 4, 7],
-                'm':    [0, 3, 7],
-                '7':    [0, 4, 7, 10],
-                'm7':   [0, 3, 7, 10],
-                'maj7': [0, 4, 7, 11],
-                'sus2': [0, 2, 7],
-                'sus4': [0, 5, 7],
-                'dim':  [0, 3, 6],
-                'aug':  [0, 4, 8],
-                'add9': [0, 4, 7, 2],
-            }
-            ivs = suffix_intervals.get(quality, [0, 4, 7])
-            return [(i + iv) % 12 for iv in ivs]
-    return []
+def _madmom_label_to_chord(label: str) -> str:
+    """Convertit un label madmom ('C:maj', 'A:min', 'N') vers notre
+    format ('C', 'Am', 'N')."""
+    if label == 'N':
+        return 'N'
+    root, _, quality = label.partition(':')
+    return root if quality == 'maj' else root + 'm'
 
 
 # ── Détection de tonalité (Krumhansl-Kessler) ─────────────────────────
@@ -153,7 +91,10 @@ KEY_NAMES_FR = {
 
 
 def detect_key(chroma: np.ndarray) -> tuple[str, str]:
-    """Retourne (clé anglaise, clé française). Ex: ('G major', 'Sol majeur')."""
+    """Retourne (clé anglaise, clé française). Ex: ('G major', 'Sol majeur').
+
+    chroma : tableau (12, n_frames).
+    """
     chroma_mean = chroma.mean(axis=1)
     chroma_norm = _normalize(chroma_mean.astype(np.float32))
 
@@ -173,36 +114,10 @@ def detect_key(chroma: np.ndarray) -> tuple[str, str]:
     return best_key, KEY_NAMES_FR.get(best_key, best_key)
 
 
-# ── Détection d'accords ───────────────────────────────────────────────
+# ── Détection de tempo (autocorrélation, sans dépendance numba) ───────
 
-MIN_CONFIDENCE = 0.38
-
-
-def _match_frame(frame: np.ndarray) -> tuple[str, float]:
-    best_name = 'N'
-    best_score = MIN_CONFIDENCE
-    for name, tpl in _TEMPLATES.items():
-        score = float(np.dot(frame, tpl))
-        if score > best_score:
-            best_score = score
-            best_name = name
-    return best_name, best_score
-
-
-def _merge_consecutive(items: list[tuple]) -> list[dict]:
-    """Fusionne les accords consécutifs identiques."""
-    merged: list[dict] = []
-    for t, chord, score in items:
-        if not merged or merged[-1]['chord'] != chord:
-            merged.append({'time': t, 'chord': chord, 'score': score, 'end': 0.0})
-        else:
-            merged[-1]['score'] = max(merged[-1]['score'], score)
-    return merged
-
-
-def _estimate_tempo(y: np.ndarray, sr: int, hop_length: int) -> tuple[float, np.ndarray]:
+def _estimate_tempo(y: np.ndarray, sr: int, hop_length: int) -> float:
     """Estimation du tempo par autocorrélation sur l'enveloppe d'onset (pur numpy)."""
-    # Énergie par frame
     n_frames = len(y) // hop_length
     energy = np.array([
         np.sum(y[i * hop_length:(i + 1) * hop_length] ** 2)
@@ -215,17 +130,12 @@ def _estimate_tempo(y: np.ndarray, sr: int, hop_length: int) -> tuple[float, np.
     max_lag = min(int(60 * fps / 50), len(onset_env) - 1)  # 50 BPM min
 
     if min_lag >= max_lag:
-        tempo_bpm = 120.0
-        period = int(fps * 60 / tempo_bpm)
-    else:
-        corr = np.correlate(onset_env, onset_env, mode='full')
-        corr = corr[len(corr) // 2:]
-        best_lag = min_lag + int(np.argmax(corr[min_lag:max_lag + 1]))
-        tempo_bpm = 60.0 * fps / best_lag
-        period = best_lag
+        return 120.0
 
-    beat_frames = np.arange(period // 2, n_frames, period, dtype=int)
-    return float(tempo_bpm), beat_frames
+    corr = np.correlate(onset_env, onset_env, mode='full')
+    corr = corr[len(corr) // 2:]
+    best_lag = min_lag + int(np.argmax(corr[min_lag:max_lag + 1]))
+    return 60.0 * fps / best_lag
 
 
 def _to_wav_if_needed(filepath: str) -> tuple[str, bool]:
@@ -252,7 +162,9 @@ def detect_chords(
     progress_callback=None,
 ) -> tuple[list[dict], float, str, str, float]:
     """
-    Détecte les accords avec synchronisation sur les mesures du morceau.
+    Détecte les accords (majeur/mineur) via le modèle pré-entraîné madmom
+    (extracteur de chroma par CNN + décodage CRF), et la tonalité à
+    partir du même chroma.
 
     Retourne : (chords, duration, key_en, key_fr, tempo_bpm)
     """
@@ -264,79 +176,38 @@ def detect_chords(
     load_path, converted = _to_wav_if_needed(filepath)
     try:
         y, sr = librosa.load(load_path, sr=22050, mono=True)
+        duration = float(len(y) / sr)
+        cb(15)
+
+        # Tempo via autocorrélation (évite librosa.beat.beat_track qui utilise guvectorize)
+        tempo_bpm = _estimate_tempo(y, sr, hop_length)
+        cb(30)
+
+        # Chroma « profond » (CNN pré-entraîné madmom), utilisé à la fois
+        # pour la détection d'accords et la détection de tonalité.
+        chroma = DeepChromaProcessor()(load_path)  # (n_frames, 12)
+        cb(60)
+
+        key_en, key_fr = detect_key(chroma.T)
+        cb(70)
+
+        segments = DeepChromaChordRecognitionProcessor()(chroma)
+        cb(95)
     finally:
         if converted:
             try:
                 os.unlink(load_path)
             except OSError:
                 pass
-    duration = float(len(y) / sr)
-    cb(18)
 
-    # Tempo via autocorrélation (évite librosa.beat.beat_track qui utilise guvectorize)
-    tempo_bpm, beat_frames = _estimate_tempo(y, sr, hop_length)
-    cb(30)
-
-    # HPSS via filtre médian sur le spectrogramme (évite librosa.effects.hpss + guvectorize)
-    S = librosa.stft(y, hop_length=hop_length)
-    H_mag = median_filter(np.abs(S), size=(1, 31))
-    del S
-    cb(48)
-
-    # Chroma STFT (évite chroma_cqt qui utilise CQT avec resampling numba)
-    # tuning=0 : désactive estimate_tuning/piptrack, qui utilise un stencil
-    # numba incompatible avec notre stub (le stencil n'est pas un no-op).
-    # On passe directement le spectrogramme de puissance déjà filtré
-    # (H_mag**2) plutôt que de reconstruire l'audio via istft puis
-    # relancer un second STFT complet dans chroma_stft : évite un pic
-    # mémoire qui provoquait des OOM kill sur Render (plan gratuit 512 Mo).
-    chroma = librosa.feature.chroma_stft(
-        S=H_mag**2, sr=sr, hop_length=hop_length, norm=2, tuning=0,
-    )
-    cb(62)
-
-    # Regroupement par mesure (4 temps = 1 mesure, hypothèse 4/4 standard) :
-    # un accord détecté par temps donnait l'impression de suivre la mélodie
-    # note par note plutôt que de tenir des accords stables sur la phrase.
-    n_frames = chroma.shape[1]
-    beat_frames = beat_frames[beat_frames < n_frames]
-    BEATS_PER_BAR = 4
-    bar_frames = beat_frames[::BEATS_PER_BAR]
-    chroma_sync = librosa.util.sync(chroma, bar_frames, aggregate=np.median)
-    bar_times = bar_frames * hop_length / sr
-    cb(70)
-
-    # Détection de tonalité
-    key_en, key_fr = detect_key(chroma)
-    cb(75)
-
-    # Correspondance gabarits mesure par mesure
-    raw: list[tuple[float, str, float]] = []
-    for t, frame in zip(bar_times, chroma_sync.T):
-        chord, score = _match_frame(frame.astype(np.float32))
-        raw.append((float(t), chord, score))
-
-    cb(88)
-
-    # Fusion des accords consécutifs identiques
-    merged = _merge_consecutive(raw)
-    for i in range(len(merged) - 1):
-        merged[i]['end'] = merged[i + 1]['time']
-    if merged:
-        merged[-1]['end'] = duration
-
-    # Supprimer les segments trop courts en les fusionnant au voisin (évite
-    # les sursauts d'un seul temps qui donnent l'impression de suivre la
-    # mélodie plutôt que de tenir des accords stables)
-    MIN_DUR = 0.60
-    cleaned: list[dict] = []
-    for seg in merged:
-        seg_dur = seg['end'] - seg['time']
-        if seg_dur < MIN_DUR and cleaned:
-            cleaned[-1]['end'] = seg['end']
-            cleaned[-1]['score'] = max(cleaned[-1]['score'], seg['score'])
-        else:
-            cleaned.append(seg)
+    chords = [
+        {
+            'time':  float(start),
+            'end':   float(end),
+            'chord': _madmom_label_to_chord(label),
+        }
+        for start, end, label in segments
+    ]
 
     cb(100)
-    return cleaned, duration, key_en, key_fr, tempo_bpm
+    return chords, duration, key_en, key_fr, tempo_bpm
