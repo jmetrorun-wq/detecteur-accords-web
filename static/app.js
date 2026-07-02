@@ -18,6 +18,8 @@ const screens = {
   results:  document.getElementById('screen-results'),
 };
 const fileInput       = document.getElementById('file-input');
+const youtubeForm     = document.getElementById('youtube-form');
+const youtubeUrlInput = document.getElementById('youtube-url');
 const loadingFilename = document.getElementById('loading-filename');
 const infoKey         = document.getElementById('info-key');
 const infoTempo       = document.getElementById('info-tempo');
@@ -94,11 +96,9 @@ fileInput.addEventListener('change', () => {
   uploadAndAnalyze(file);
 });
 
-async function uploadAndAnalyze(file) {
-  const fd = new FormData();
-  fd.append('audio', file);
+async function performAnalyze(fetchPromise) {
   try {
-    const res = await fetch('/api/analyze', { method: 'POST', body: fd });
+    const res = await fetchPromise;
     const text = await res.text();
     let data;
     try {
@@ -121,6 +121,25 @@ async function uploadAndAnalyze(file) {
     showScreen('upload');
   }
 }
+
+function uploadAndAnalyze(file) {
+  const fd = new FormData();
+  fd.append('audio', file);
+  return performAnalyze(fetch('/api/analyze', { method: 'POST', body: fd }));
+}
+
+youtubeForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const url = youtubeUrlInput.value.trim();
+  if (!url) return;
+  loadingFilename.textContent = url;
+  showScreen('loading');
+  performAnalyze(fetch('/api/analyze-youtube', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  }));
+});
 
 function applyResults(data) {
   state.chords   = data.chords;
@@ -270,6 +289,7 @@ btnBack.addEventListener('click', () => {
   audioEl.pause();
   audioEl.src = '';
   fileInput.value = '';
+  youtubeUrlInput.value = '';
   showScreen('upload');
 });
 

@@ -86,6 +86,48 @@ html, body {
   margin-top: 1rem;
   letter-spacing: 0.05em;
 }
+.upload-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+.upload-divider::before,
+.upload-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.youtube-form {
+  display: flex;
+  gap: 0.5rem;
+}
+.youtube-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.85rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.95rem;
+  min-height: 48px;
+}
+.youtube-input::placeholder { color: var(--text-dim); }
+.btn-youtube {
+  padding: 0.85rem 1.25rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 600;
+  border-radius: var(--radius);
+  cursor: pointer;
+  min-height: 48px;
+}
+.btn-youtube:active { opacity: 0.8; }
 
 /* ── Écran Chargement ────────────────────────────────────────────── */
 #screen-loading {
