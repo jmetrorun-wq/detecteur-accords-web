@@ -3,6 +3,8 @@
 // ── État global ────────────────────────────────────────────────────
 const state = {
   chords:    [],       // [{time, end, chord, color, type}, ...]
+  structure: [],       // [{label, start, end}, ...]
+  title:     '',
   duration:  0,
   keyFr:     '',
   tempo:     0,
@@ -37,6 +39,7 @@ const btnBack         = document.getElementById('btn-back');
 const btnTrDown       = document.getElementById('btn-tr-down');
 const btnTrUp         = document.getElementById('btn-tr-up');
 const trLabel         = document.getElementById('tr-label');
+const btnExportPdf    = document.getElementById('btn-export-pdf');
 const audioEl         = document.getElementById('audio-player');
 
 // ── Utilitaires ────────────────────────────────────────────────────
@@ -142,11 +145,13 @@ youtubeForm.addEventListener('submit', (e) => {
 });
 
 function applyResults(data) {
-  state.chords   = data.chords;
-  state.duration = data.duration;
-  state.keyFr    = data.key_fr;
-  state.tempo    = data.tempo;
-  state.fileId   = data.file_id;
+  state.chords    = data.chords;
+  state.structure = data.structure || [];
+  state.title     = data.title || '';
+  state.duration  = data.duration;
+  state.keyFr     = data.key_fr;
+  state.tempo     = data.tempo;
+  state.fileId    = data.file_id;
   state.transpose = 0;
   state.activeIdx = -1;
 
@@ -283,6 +288,40 @@ function setTranspose(n) {
   state.activeIdx = -2; // force refresh
   updateChordAt(audioEl.currentTime);
 }
+
+// ── Export PDF ─────────────────────────────────────────────────────
+btnExportPdf.addEventListener('click', async () => {
+  btnExportPdf.disabled = true;
+  try {
+    const res = await fetch('/api/export-pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title:     state.title,
+        key_fr:    transposeKey(state.keyFr, state.transpose),
+        tempo:     state.tempo,
+        duration:  state.duration,
+        chords:    currentChords(),
+        structure: state.structure,
+      }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error ?? `Erreur ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'grille-accords.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert(`Erreur export PDF : ${err.message}`);
+  } finally {
+    btnExportPdf.disabled = false;
+  }
+});
 
 // ── Retour ─────────────────────────────────────────────────────────
 btnBack.addEventListener('click', () => {

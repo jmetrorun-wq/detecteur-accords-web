@@ -6,6 +6,7 @@ scipy>=1.7.0
 soundfile>=0.12.0
 audioread>=3.0.0
 yt-dlp>=2024.1.0
+reportlab>=4.0.0
 # La version PyPI (0.16.1) casse avec les NumPy récents (np.float supprimé) ;
 # le correctif n'existe que sur la branche GitHub, pas encore republié.
 madmom @ git+https://github.com/CPJKU/madmom.git@27f032e8947204902c675e5e341a3faf5dc86dae

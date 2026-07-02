@@ -1,5 +1,6 @@
 """Backend Flask pour le Détecteur d'Accords Web (version iPhone/PWA)."""
 
+import io
 import os
 import re
 import uuid
@@ -10,7 +11,8 @@ from typing import Optional
 
 import yt_dlp
 from flask import Flask, request, jsonify, send_file, render_template
-from chord_detector import detect_chords, chord_color, chord_type_name
+from chord_detector import detect_chords, detect_structure, chord_color, chord_type_name
+from pdf_export import build_chord_chart_pdf
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 
@@ -72,13 +74,24 @@ def _analyze_and_respond(filepath: str, file_id: str, extra: Optional[dict] = No
         for c in chords
     ]
 
+    structure = detect_structure(chords, tempo, duration)
+    structure_out = [
+        {
+            'label': s['label'],
+            'start': round(s['start'], 3),
+            'end':   round(s['end'], 3),
+        }
+        for s in structure
+    ]
+
     payload = {
-        'file_id':  file_id,
-        'duration': round(duration, 2),
-        'key_en':   key_en,
-        'key_fr':   key_fr,
-        'tempo':    round(float(tempo)),
-        'chords':   chords_out,
+        'file_id':   file_id,
+        'duration':  round(duration, 2),
+        'key_en':    key_en,
+        'key_fr':    key_fr,
+        'tempo':     round(float(tempo)),
+        'chords':    chords_out,
+        'structure': structure_out,
     }
     if extra:
         payload.update(extra)
@@ -152,6 +165,37 @@ def analyze_youtube():
         os.path.join(UPLOAD_DIR, file_id_ext),
         file_id_ext,
         {'title': info.get('title', '')},
+    )
+
+
+@app.route('/api/export-pdf', methods=['POST'])
+def export_pdf():
+    data = request.get_json(silent=True) or {}
+    chords = data.get('chords') or []
+    if not chords:
+        return jsonify({'error': 'Aucun accord à exporter.'}), 400
+
+    tempo = int(data.get('tempo') or 120)
+    duration = float(data.get('duration') or 0)
+    structure = data.get('structure') or []
+
+    try:
+        pdf_bytes = build_chord_chart_pdf(
+            title=data.get('title') or '',
+            key_fr=data.get('key_fr') or '',
+            tempo=tempo,
+            chords=chords,
+            structure=structure,
+            duration=duration,
+        )
+    except Exception as exc:
+        return jsonify({'error': f"Erreur lors de la génération du PDF : {exc}"}), 500
+
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name='grille-accords.pdf',
     )
 
 

@@ -211,3 +211,184 @@ def detect_chords(
 
     cb(100)
     return chords, duration, key_en, key_fr, tempo_bpm
+
+
+# ── Structure du morceau (heuristique) ────────────────────────────────
+#
+# On n'a pas d'analyse audio dédiée à la structure (auto-similarité
+# spectrale/timbrale) : on repère plutôt les motifs d'accords qui se
+# répètent (le refrain rejoue en général la même grille que ses autres
+# occurrences), mesure par mesure. C'est une heuristique : elle se
+# trompe notamment quand couplet et refrain partagent les mêmes
+# accords, ce qui arrive souvent — sans les paroles, rien ne permet de
+# les distinguer dans ce cas.
+
+PATTERN_BARS = 4  # taille (en mesures) des blocs comparés pour détecter une répétition
+
+
+def _make_chunk_bounds(n_bars: int, offset: int) -> list[tuple[int, int]]:
+    """Bornes (en mesures) de blocs de PATTERN_BARS mesures, avec un
+    éventuel bloc initial plus court de `offset` mesures — permet
+    d'aligner la grille sur le vrai début des phrases musicales quand
+    l'intro ne fait pas un nombre entier de PATTERN_BARS mesures."""
+    bounds: list[tuple[int, int]] = []
+    if offset > 0:
+        bounds.append((0, offset))
+    b = offset
+    while b < n_bars:
+        bounds.append((b, min(b + PATTERN_BARS, n_bars)))
+        b += PATTERN_BARS
+    return bounds
+
+
+def _chunk_motifs(tokens: list[str], bounds: list[tuple[int, int]]) -> list[int]:
+    """Associe à chaque bloc (défini par `bounds`) un identifiant de
+    motif : deux blocs pleins (PATTERN_BARS mesures) ont le même
+    identifiant s'ils jouent exactement la même grille d'accords. Les
+    blocs partiels (le reste avant/après le dernier alignement possible
+    de la grille) reçoivent chacun un identifiant unique : plus courts,
+    ils matcheraient trop facilement par coïncidence, alors qu'ils sont
+    surtout des restes d'intro/outro plutôt que de vraies répétitions."""
+    sig_to_id: dict[tuple, int] = {}
+    motif_id: list[int] = []
+    for s, e in bounds:
+        if e - s != PATTERN_BARS:
+            motif_id.append(-(len(motif_id) + 1))  # id négatif unique, jamais partagé
+            continue
+        sig = tuple(tokens[s:e])
+        if sig not in sig_to_id:
+            sig_to_id[sig] = len(sig_to_id)
+        motif_id.append(sig_to_id[sig])
+    return motif_id
+
+
+def _repetition_score(motif_id: list[int]) -> int:
+    """Nombre de blocs faisant partie d'une répétition (motif partagé
+    par au moins 2 blocs) — sert à choisir le meilleur alignement de
+    grille (cf. _make_chunk_bounds)."""
+    counts: dict[int, int] = {}
+    for m in motif_id:
+        counts[m] = counts.get(m, 0) + 1
+    return sum(c for c in counts.values() if c >= 2)
+
+
+def _label_motifs(motif_id: list[int]) -> list[str]:
+    """Nomme chaque bloc (Intro/Couplet/Refrain/Pont/Outro) à partir des
+    identifiants de motifs."""
+    n = len(motif_id)
+
+    # Regroupe en segments consécutifs (une même occurrence du motif)
+    segments: list[tuple[int, int, int]] = []
+    start = 0
+    for b in range(1, n + 1):
+        if b == n or motif_id[b] != motif_id[start]:
+            segments.append((start, b, motif_id[start]))
+            start = b
+
+    occurrences: dict[int, int] = {}
+    for _, _, m in segments:
+        occurrences[m] = occurrences.get(m, 0) + 1
+
+    repeated = [m for m, c in occurrences.items() if c >= 2]
+    chorus_motif = max(repeated, key=lambda m: occurrences[m]) if repeated else None
+
+    # Les motifs uniques (une seule occurrence) au milieu du morceau
+    # sont des candidats "Pont" ; s'il y en a plusieurs, on les numérote.
+    middle_unique = [
+        idx for idx, (_, _, m) in enumerate(segments)
+        if occurrences[m] == 1 and 0 < idx < len(segments) - 1
+    ]
+
+    verse_labels: dict[int, str] = {}
+    verse_counter = 0
+    pont_counter = 0
+    labels = [''] * n
+
+    for idx, (s, e, m) in enumerate(segments):
+        if m == chorus_motif:
+            label = 'Refrain'
+        elif occurrences[m] >= 2:
+            if m not in verse_labels:
+                verse_counter += 1
+                verse_labels[m] = f'Couplet {verse_counter}'
+            label = verse_labels[m]
+        elif idx == 0:
+            label = 'Intro'
+        elif idx == len(segments) - 1:
+            label = 'Outro'
+        else:
+            if len(middle_unique) > 1:
+                pont_counter += 1
+                label = f'Pont {pont_counter}'
+            else:
+                label = 'Pont'
+        for b in range(s, e):
+            labels[b] = label
+
+    return labels
+
+
+def bars_per_chord(tempo_bpm: float) -> float:
+    """Durée d'une mesure (secondes), hypothèse 4/4."""
+    return 4 * 60.0 / tempo_bpm
+
+
+def chords_to_bar_tokens(chords: list[dict], tempo_bpm: float, duration: float) -> list[str]:
+    """Rééchantillonne la liste d'accords détectés sur une grille de
+    mesures régulière (un accord par mesure, hypothèse 4/4) : sert à la
+    fois à la détection de structure et à l'export en grille."""
+    if not chords or duration <= 0 or tempo_bpm <= 0:
+        return []
+    bar_dur = bars_per_chord(tempo_bpm)
+    n_bars = max(1, round(duration / bar_dur))
+    tokens: list[str] = []
+    ci = 0
+    for b in range(n_bars):
+        t_mid = (b + 0.5) * bar_dur
+        while ci + 1 < len(chords) and chords[ci]['end'] <= t_mid:
+            ci += 1
+        tokens.append(chords[ci]['chord'])
+    return tokens
+
+
+def detect_structure(
+    chords: list[dict],
+    tempo_bpm: float,
+    duration: float,
+) -> list[dict]:
+    """
+    Découpe le morceau en sections nommées (Intro/Couplet/Refrain/Pont/
+    Outro) à partir des répétitions de la grille d'accords, mesure par
+    mesure (hypothèse 4/4). Retourne une liste de
+    {'label', 'start', 'end'} — vide si le morceau est trop court pour
+    qu'une répétition ait un sens.
+    """
+    tokens = chords_to_bar_tokens(chords, tempo_bpm, duration)
+    n_bars = len(tokens)
+    if n_bars < PATTERN_BARS * 2:
+        return [{'label': 'Chanson', 'start': 0.0, 'end': duration}] if tokens else []
+
+    bar_dur = bars_per_chord(tempo_bpm)
+
+    # Essaie plusieurs décalages de grille (l'intro n'a pas forcément un
+    # nombre entier de PATTERN_BARS mesures) et garde celui qui capture
+    # le plus de répétitions.
+    best_bounds, best_motif_id, best_score = None, None, -1
+    for offset in range(PATTERN_BARS):
+        bounds = _make_chunk_bounds(n_bars, offset)
+        motif_id = _chunk_motifs(tokens, bounds)
+        score = _repetition_score(motif_id)
+        if score > best_score:
+            best_bounds, best_motif_id, best_score = bounds, motif_id, score
+
+    labels = _label_motifs(best_motif_id)
+
+    sections: list[dict] = []
+    for (b0, b1), label in zip(best_bounds, labels):
+        t0 = b0 * bar_dur
+        t1 = min(b1 * bar_dur, duration)
+        if sections and sections[-1]['label'] == label:
+            sections[-1]['end'] = t1
+        else:
+            sections.append({'label': label, 'start': t0, 'end': t1})
+    return sections
