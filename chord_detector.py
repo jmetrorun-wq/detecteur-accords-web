@@ -279,16 +279,19 @@ def detect_chords(
 
     # HPSS via filtre médian sur le spectrogramme (évite librosa.effects.hpss + guvectorize)
     S = librosa.stft(y, hop_length=hop_length)
-    S_mag = np.abs(S)
-    H_mag = median_filter(S_mag, size=(1, 31))
-    y_harmonic = librosa.istft(H_mag * np.exp(1j * np.angle(S)), hop_length=hop_length)
+    H_mag = median_filter(np.abs(S), size=(1, 31))
+    del S
     cb(48)
 
     # Chroma STFT (évite chroma_cqt qui utilise CQT avec resampling numba)
     # tuning=0 : désactive estimate_tuning/piptrack, qui utilise un stencil
     # numba incompatible avec notre stub (le stencil n'est pas un no-op).
+    # On passe directement le spectrogramme de puissance déjà filtré
+    # (H_mag**2) plutôt que de reconstruire l'audio via istft puis
+    # relancer un second STFT complet dans chroma_stft : évite un pic
+    # mémoire qui provoquait des OOM kill sur Render (plan gratuit 512 Mo).
     chroma = librosa.feature.chroma_stft(
-        y=y_harmonic, sr=sr, hop_length=hop_length, norm=2, tuning=0,
+        S=H_mag**2, sr=sr, hop_length=hop_length, norm=2, tuning=0,
     )
     cb(62)
 
