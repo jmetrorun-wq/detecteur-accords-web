@@ -94,8 +94,6 @@ fileInput.addEventListener('change', () => {
   uploadAndAnalyze(file);
 });
 
-document.querySelector('.btn-upload').addEventListener('click', () => fileInput.click());
-
 async function uploadAndAnalyze(file) {
   const fd = new FormData();
   fd.append('audio', file);

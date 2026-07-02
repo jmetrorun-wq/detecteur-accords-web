@@ -285,8 +285,10 @@ def detect_chords(
     cb(48)
 
     # Chroma STFT (évite chroma_cqt qui utilise CQT avec resampling numba)
+    # tuning=0 : désactive estimate_tuning/piptrack, qui utilise un stencil
+    # numba incompatible avec notre stub (le stencil n'est pas un no-op).
     chroma = librosa.feature.chroma_stft(
-        y=y_harmonic, sr=sr, hop_length=hop_length, norm=2,
+        y=y_harmonic, sr=sr, hop_length=hop_length, norm=2, tuning=0,
     )
     cb(62)
 
