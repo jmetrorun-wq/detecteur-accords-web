@@ -234,10 +234,10 @@ function updateChordAt(time) {
     el.classList.toggle('active', Number(el.dataset.idx) === idx);
   });
 
-  // Scroll auto vers l'accord actif
+  // Défilement auto : centre l'accord actif dans la barre horizontale
   if (idx >= 0) {
     const chip = chordListEl.querySelector(`[data-idx="${idx}"]`);
-    if (chip) chip.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (chip) chip.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
   }
 }
 
