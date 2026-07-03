@@ -250,9 +250,9 @@ btnPlay.addEventListener('click', () => {
   }
 });
 
-audioEl.addEventListener('play',  () => { btnPlay.textContent = '⏸'; });
-audioEl.addEventListener('pause', () => { btnPlay.textContent = '▶'; });
-audioEl.addEventListener('ended', () => { btnPlay.textContent = '▶'; });
+audioEl.addEventListener('play',  () => { btnPlay.textContent = '⏸'; startSyncLoop(); });
+audioEl.addEventListener('pause', () => { btnPlay.textContent = '▶'; stopSyncLoop(); });
+audioEl.addEventListener('ended', () => { btnPlay.textContent = '▶'; stopSyncLoop(); });
 
 // Seek manuel
 let isSeeking = false;
@@ -264,17 +264,36 @@ seekBar.addEventListener('input', () => {
 seekBar.addEventListener('change', () => {
   audioEl.currentTime = Number(seekBar.value);
   isSeeking = false;
+  updateChordAt(audioEl.currentTime);
 });
 
-// Mise à jour en cours de lecture
-audioEl.addEventListener('timeupdate', () => {
+// Mise à jour en cours de lecture : `timeupdate` ne se déclenche que
+// ~4x/seconde dans la plupart des navigateurs, ce qui rendait l'accord
+// affiché visiblement en retard sur l'audio. On resynchronise à chaque
+// frame (~60x/seconde) pendant la lecture via requestAnimationFrame.
+let syncLoopId = null;
+
+function syncLoop() {
   const t = audioEl.currentTime;
   if (!isSeeking) {
     seekBar.value = String(t);
     timeCurrent.textContent = fmtTime(t);
   }
   updateChordAt(t);
-});
+  syncLoopId = requestAnimationFrame(syncLoop);
+}
+
+function startSyncLoop() {
+  if (syncLoopId === null) syncLoopId = requestAnimationFrame(syncLoop);
+}
+
+function stopSyncLoop() {
+  if (syncLoopId !== null) {
+    cancelAnimationFrame(syncLoopId);
+    syncLoopId = null;
+  }
+  updateChordAt(audioEl.currentTime);
+}
 
 // ── Transposition ──────────────────────────────────────────────────
 btnTrDown.addEventListener('click', () => setTranspose(state.transpose - 1));
