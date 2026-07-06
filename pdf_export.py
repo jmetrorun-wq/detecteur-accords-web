@@ -1,6 +1,5 @@
 """Génération de la grille d'accords (+ plan du morceau) en PDF."""
 
-import bisect
 import io
 from xml.sax.saxutils import escape
 
@@ -44,7 +43,6 @@ def build_chord_chart_pdf(
     chords: list[dict],
     structure: list[dict],
     duration: float,
-    bar_times: list[float],
 ) -> bytes:
     """Construit le PDF (grille d'accords, groupée par section si une
     structure a été détectée) et retourne les octets du fichier."""
@@ -67,12 +65,13 @@ def build_chord_chart_pdf(
         Spacer(1, 0.6 * cm),
     ]
 
-    tokens = chords_to_bar_tokens(chords, bar_times, duration)
+    tokens = chords_to_bar_tokens(chords, tempo, duration)
+    bar_dur = 4 * 60.0 / tempo if tempo else 0
 
     sections = structure or [{'label': None, 'start': 0.0, 'end': duration}]
     for sec in sections:
-        b0 = bisect.bisect_left(bar_times, sec['start']) if bar_times else 0
-        b1 = bisect.bisect_left(bar_times, sec['end']) if bar_times else len(tokens)
+        b0 = int(round(sec['start'] / bar_dur)) if bar_dur else 0
+        b1 = int(round(sec['end'] / bar_dur)) if bar_dur else len(tokens)
         sec_tokens = tokens[b0:b1]
         if not sec_tokens:
             continue
