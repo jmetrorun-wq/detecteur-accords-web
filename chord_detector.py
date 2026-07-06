@@ -4,6 +4,8 @@ import subprocess
 import numpy as np
 import librosa
 from madmom.audio.chroma import DeepChromaProcessor
+from madmom.audio.signal import Signal
+from madmom.features.downbeats import RNNDownBeatProcessor, DBNDownBeatTrackingProcessor
 
 NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
@@ -157,7 +159,70 @@ def detect_key(chroma: np.ndarray) -> tuple[str, str]:
     return best_key, KEY_NAMES_FR.get(best_key, best_key)
 
 
+# ── Détection de signature rythmique et de mesures ────────────────────
+
+_METER_CANDIDATES = [3, 4, 6]  # temps par mesure testés (3/4, 4/4, 6/8)
+_METER_WINDOW_S = 60.0  # borne le coût de calcul (RNN+HMM coûteux), indépendant de la durée du morceau
+
+
+def detect_meter(y: np.ndarray, sr: int, duration: float) -> tuple[int, list[float], float]:
+    """Détecte la signature rythmique (temps par mesure) et le tempo à
+    partir d'un extrait borné du début du morceau, via le tracker de
+    mesures pré-entraîné de madmom (RNNDownBeatProcessor + décodage HMM
+    DBNDownBeatTrackingProcessor — coûteux, ~0.2-0.3s de calcul par
+    seconde d'audio, d'où l'extrait borné à _METER_WINDOW_S plutôt que
+    le morceau entier). Étend ensuite une grille de mesures à tempo
+    constant sur tout le morceau, calée sur le premier temps fort
+    réellement détecté (pas forcément à t=0 s'il y a une intro/anacrouse).
+
+    Retourne (beats_per_bar, bar_times, tempo_bpm). Lève une exception
+    si la détection échoue (fichier trop court, modèle en défaut) — à
+    charge de l'appelant de retomber sur une hypothèse par défaut.
+
+    Limite connue et assumée : au-delà de l'extrait analysé, un
+    changement de tempo réel referait dériver la grille (même risque
+    que l'ancienne estimation par autocorrélation, mais désormais borné
+    à une fraction du morceau et avec un calage de phase correct au
+    départ). Limite connue : 3/4 et 6/8 sont parfois confondus (une
+    mesure à 6 temps peut s'expliquer comme deux mesures à 3 temps),
+    ambiguïté classique de la détection de mètre.
+    """
+    n = min(len(y), int(sr * _METER_WINDOW_S))
+    sig = Signal(y[:n].astype(np.float32), sample_rate=sr, num_channels=1)
+    activations = RNNDownBeatProcessor()(sig)
+    beats = DBNDownBeatTrackingProcessor(beats_per_bar=_METER_CANDIDATES, fps=100)(activations)
+    if len(beats) < 2:
+        raise ValueError('pas assez de temps détectés')
+
+    beat_times = beats[:, 0]
+    positions = beats[:, 1].astype(int)
+    beats_per_bar = int(positions.max())
+    downbeats = beat_times[positions == 1]
+    if len(downbeats) == 0:
+        raise ValueError('aucun premier temps détecté')
+
+    tempo_bpm = 60.0 / float(np.median(np.diff(beat_times)))
+    bar_dur = beats_per_bar * 60.0 / tempo_bpm
+
+    first_downbeat = float(downbeats[0]) if downbeats[0] <= bar_dur else 0.0
+    bar_times: list[float] = []
+    t = first_downbeat
+    while t < duration:
+        bar_times.append(t)
+        t += bar_dur
+    return beats_per_bar, bar_times, tempo_bpm
+
+
+def _uniform_bar_times(tempo_bpm: float, duration: float) -> list[float]:
+    """Grille de mesures à 4 temps, tempo constant depuis t=0 — secours
+    si detect_meter échoue."""
+    bar_dur = 4 * 60.0 / tempo_bpm
+    n_bars = max(1, round(duration / bar_dur))
+    return [b * bar_dur for b in range(n_bars)]
+
+
 # ── Détection de tempo (autocorrélation, sans dépendance numba) ───────
+# Utilisée uniquement en secours si detect_meter échoue.
 
 def _estimate_tempo(y: np.ndarray, sr: int, hop_length: int) -> float:
     """Estimation du tempo par autocorrélation sur l'enveloppe d'onset (pur numpy)."""
@@ -254,16 +319,18 @@ def detect_chords(
     filepath: str,
     hop_length: int = 512,
     progress_callback=None,
-) -> tuple[list[dict], float, str, str, float]:
+) -> tuple[list[dict], float, str, str, float, int, list[float]]:
     """
     Détecte les accords (vocabulaire enrichi : maj/min/7/maj7/m7/sus2/
     sus4/dim/aug/add9) par corrélation gabarits sur le chroma « profond »
     pré-entraîné de madmom (CNN, beaucoup moins bruité qu'un chroma STFT
     classique), frame par frame sur la grille temporelle réelle (pas de
     dépendance au tempo estimé, pour rester synchronisé avec l'audio).
-    La tonalité utilise ce même chroma.
+    La tonalité utilise ce même chroma. La signature rythmique et les
+    mesures sont détectées séparément par detect_meter (cf. sa
+    docstring pour les limites connues).
 
-    Retourne : (chords, duration, key_en, key_fr, tempo_bpm)
+    Retourne : (chords, duration, key_en, key_fr, tempo_bpm, beats_per_bar, bar_times)
     """
     def cb(v: int) -> None:
         if progress_callback:
@@ -276,17 +343,24 @@ def detect_chords(
         duration = float(len(y) / sr)
         cb(15)
 
-        # Tempo via autocorrélation (évite librosa.beat.beat_track qui utilise guvectorize)
-        tempo_bpm = _estimate_tempo(y, sr, hop_length)
-        cb(30)
+        try:
+            beats_per_bar, bar_times, tempo_bpm = detect_meter(y, sr, duration)
+            if not bar_times:
+                raise ValueError('aucune mesure détectée')
+        except Exception as exc:
+            print(f'detect_meter a échoué ({exc!r}), repli sur 4/4 à tempo constant')
+            tempo_bpm = _estimate_tempo(y, sr, hop_length)
+            beats_per_bar = 4
+            bar_times = _uniform_bar_times(tempo_bpm, duration)
+        cb(50)
 
         # Chroma « profond » (CNN pré-entraîné madmom), utilisé à la fois
         # pour la détection d'accords et la détection de tonalité.
         chroma = DeepChromaProcessor()(load_path)  # (n_frames, 12)
-        cb(60)
+        cb(80)
 
         key_en, key_fr = detect_key(chroma.T)
-        cb(70)
+        cb(88)
 
         chords = _chroma_to_chord_segments(chroma, duration)
         cb(95)
@@ -298,7 +372,7 @@ def detect_chords(
                 pass
 
     cb(100)
-    return chords, duration, key_en, key_fr, tempo_bpm
+    return chords, duration, key_en, key_fr, tempo_bpm, beats_per_bar, bar_times
 
 
 # ── Structure du morceau (heuristique) ────────────────────────────────
@@ -416,23 +490,20 @@ def _label_motifs(motif_id: list[int]) -> list[str]:
     return labels
 
 
-def bars_per_chord(tempo_bpm: float) -> float:
-    """Durée d'une mesure (secondes), hypothèse 4/4."""
-    return 4 * 60.0 / tempo_bpm
-
-
-def chords_to_bar_tokens(chords: list[dict], tempo_bpm: float, duration: float) -> list[str]:
-    """Rééchantillonne la liste d'accords détectés sur une grille de
-    mesures régulière (un accord par mesure, hypothèse 4/4) : sert à la
-    fois à la détection de structure et à l'export en grille."""
-    if not chords or duration <= 0 or tempo_bpm <= 0:
+def chords_to_bar_tokens(chords: list[dict], bar_times: list[float], duration: float) -> list[str]:
+    """Rééchantillonne la liste d'accords détectés sur la grille de
+    mesures réelle (bar_times, une entrée par mesure — cf. detect_meter)
+    : un accord par mesure, sert à la fois à la détection de structure
+    et à l'export en grille."""
+    if not chords or not bar_times:
         return []
-    bar_dur = bars_per_chord(tempo_bpm)
-    n_bars = max(1, round(duration / bar_dur))
+    n_bars = len(bar_times)
     tokens: list[str] = []
     ci = 0
     for b in range(n_bars):
-        t_mid = (b + 0.5) * bar_dur
+        t0 = bar_times[b]
+        t1 = bar_times[b + 1] if b + 1 < n_bars else duration
+        t_mid = (t0 + t1) / 2
         while ci + 1 < len(chords) and chords[ci]['end'] <= t_mid:
             ci += 1
         tokens.append(chords[ci]['chord'])
@@ -441,22 +512,20 @@ def chords_to_bar_tokens(chords: list[dict], tempo_bpm: float, duration: float) 
 
 def detect_structure(
     chords: list[dict],
-    tempo_bpm: float,
+    bar_times: list[float],
     duration: float,
 ) -> list[dict]:
     """
     Découpe le morceau en sections nommées (Intro/Couplet/Refrain/Pont/
     Outro) à partir des répétitions de la grille d'accords, mesure par
-    mesure (hypothèse 4/4). Retourne une liste de
-    {'label', 'start', 'end'} — vide si le morceau est trop court pour
-    qu'une répétition ait un sens.
+    mesure (grille réelle bar_times — cf. detect_meter). Retourne une
+    liste de {'label', 'start', 'end'} — vide si le morceau est trop
+    court pour qu'une répétition ait un sens.
     """
-    tokens = chords_to_bar_tokens(chords, tempo_bpm, duration)
+    tokens = chords_to_bar_tokens(chords, bar_times, duration)
     n_bars = len(tokens)
     if n_bars < PATTERN_BARS * 2:
         return [{'label': 'Chanson', 'start': 0.0, 'end': duration}] if tokens else []
-
-    bar_dur = bars_per_chord(tempo_bpm)
 
     # Essaie plusieurs décalages de grille (l'intro n'a pas forcément un
     # nombre entier de PATTERN_BARS mesures) et garde celui qui capture
@@ -473,8 +542,8 @@ def detect_structure(
 
     sections: list[dict] = []
     for (b0, b1), label in zip(best_bounds, labels):
-        t0 = b0 * bar_dur
-        t1 = min(b1 * bar_dur, duration)
+        t0 = bar_times[b0]
+        t1 = bar_times[b1] if b1 < n_bars else duration
         if sections and sections[-1]['label'] == label:
             sections[-1]['end'] = t1
         else:

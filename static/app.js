@@ -148,15 +148,17 @@ youtubeForm.addEventListener('submit', (e) => {
 });
 
 function applyResults(data) {
-  state.chords    = data.chords;
-  state.structure = data.structure || [];
-  state.title     = data.title || '';
-  state.duration  = data.duration;
-  state.keyFr     = data.key_fr;
-  state.tempo     = data.tempo;
-  state.fileId    = data.file_id;
-  state.transpose = 0;
-  state.activeIdx = -1;
+  state.chords      = data.chords;
+  state.structure   = data.structure || [];
+  state.title       = data.title || '';
+  state.duration    = data.duration;
+  state.keyFr       = data.key_fr;
+  state.tempo       = data.tempo;
+  state.barTimes    = data.bar_times || [];
+  state.beatsPerBar = data.beats_per_bar || 4;
+  state.fileId      = data.file_id;
+  state.transpose   = 0;
+  state.activeIdx   = -1;
 
   // Configurer l'audio
   audioEl.src = `/api/audio/${data.file_id}`;
@@ -188,27 +190,21 @@ function currentChords() {
   }));
 }
 
-// Durée d'une mesure (hypothèse 4/4, tempo constant — même formule que
-// bars_per_chord côté serveur).
-function barDuration() {
-  return state.tempo ? 4 * 60 / state.tempo : 2;
-}
-
 // Convertit la liste d'accords (segments à durée variable) en une case
-// par mesure — même principe que chords_to_bar_tokens côté serveur —
-// pour un défilement façon Chordify (mesures de taille uniforme, un
-// point par temps).
+// par mesure, sur la grille de mesures réelle détectée côté serveur
+// (state.barTimes — cf. detect_meter/chords_to_bar_tokens côté Python)
+// — pour un défilement façon Chordify (mesures de taille uniforme au
+// sein d'un même morceau, un point par temps).
 function computeMeasures() {
   const chords = currentChords();
-  if (!chords.length || !state.duration || !state.tempo) return [];
-  const barDur = barDuration();
-  const nBars = Math.max(1, Math.round(state.duration / barDur));
+  const barTimes = state.barTimes;
+  if (!chords.length || !barTimes.length) return [];
   const measures = [];
   let ci = 0;
-  for (let b = 0; b < nBars; b++) {
-    const t0 = b * barDur;
-    const t1 = Math.min((b + 1) * barDur, state.duration);
-    const tMid = (b + 0.5) * barDur;
+  for (let b = 0; b < barTimes.length; b++) {
+    const t0 = barTimes[b];
+    const t1 = b + 1 < barTimes.length ? barTimes[b + 1] : state.duration;
+    const tMid = (t0 + t1) / 2;
     while (ci + 1 < chords.length && chords[ci].end <= tMid) ci++;
     measures.push({ start: t0, end: t1, chord: chords[ci].chord, color: chords[ci].color });
   }
@@ -220,18 +216,17 @@ function renderMeasures() {
   state.measures = computeMeasures();
   state.activeMeasureIdx = -1;
   state.activeBeat = -1;
+  const beatDots = Array.from(
+    { length: state.beatsPerBar },
+    (_, i) => `<span class="beat-dot" data-beat="${i}"></span>`,
+  ).join('');
   state.measures.forEach((m, idx) => {
     const chip = document.createElement('div');
     chip.className = 'measure-chip';
     chip.dataset.idx = idx;
     chip.innerHTML = `
       <span class="chip-name" style="color:${m.color}">${m.chord === 'N' ? '–' : m.chord}</span>
-      <span class="chip-beats">
-        <span class="beat-dot" data-beat="0"></span>
-        <span class="beat-dot" data-beat="1"></span>
-        <span class="beat-dot" data-beat="2"></span>
-        <span class="beat-dot" data-beat="3"></span>
-      </span>
+      <span class="chip-beats">${beatDots}</span>
     `;
     chip.addEventListener('click', () => {
       audioEl.currentTime = m.start + 0.05;
@@ -272,11 +267,22 @@ function updateChordAt(time) {
 // point allumé à la fois = le temps en cours, façon métronome).
 function updateMeasureAt(time) {
   const measures = state.measures;
-  if (!measures || !measures.length) return;
-  const barDur = barDuration();
-  let idx = Math.floor(time / barDur);
-  idx = Math.max(0, Math.min(measures.length - 1, idx));
-  const beat = Math.max(0, Math.min(3, Math.floor(((time - idx * barDur) / barDur) * 4)));
+  const barTimes = state.barTimes;
+  if (!measures.length || !barTimes.length) return;
+
+  // barTimes n'est pas forcément uniforme (calé sur les mesures
+  // réellement détectées) : on cherche la dernière mesure commencée.
+  let idx = barTimes.length - 1;
+  for (let i = 0; i < barTimes.length; i++) {
+    if (barTimes[i] > time) { idx = Math.max(0, i - 1); break; }
+  }
+  const barStart = barTimes[idx];
+  const barEnd = idx + 1 < barTimes.length ? barTimes[idx + 1] : state.duration;
+  const barDur = Math.max(0.001, barEnd - barStart);
+  const beat = Math.max(0, Math.min(
+    state.beatsPerBar - 1,
+    Math.floor(((time - barStart) / barDur) * state.beatsPerBar),
+  ));
 
   if (idx !== state.activeMeasureIdx) {
     document.querySelectorAll('.measure-chip').forEach(el => {
