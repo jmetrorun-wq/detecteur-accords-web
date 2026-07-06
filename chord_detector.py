@@ -4,32 +4,84 @@ import subprocess
 import numpy as np
 import librosa
 from madmom.audio.chroma import DeepChromaProcessor
-from madmom.features.chords import DeepChromaChordRecognitionProcessor
 
 NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
+# ── Gabarits d'accords ────────────────────────────────────────────────
+# madmom ne fournit qu'un extracteur de chroma (CNN) et un décodeur
+# majeur/mineur (CRF) ; pour un vocabulaire enrichi, on garde le chroma
+# CNN (nettement moins bruité que chroma_stft) mais on décode nous-mêmes
+# par corrélation gabarits, mesure par mesure.
+
+_CHORD_INTERVALS: dict[str, list[int]] = {
+    '':     [0, 4, 7],
+    'm':    [0, 3, 7],
+    '7':    [0, 4, 7, 10],
+    'm7':   [0, 3, 7, 10],
+    'maj7': [0, 4, 7, 11],
+    'sus2': [0, 2, 7],
+    'sus4': [0, 5, 7],
+    'dim':  [0, 3, 6],
+    'aug':  [0, 4, 8],
+    'add9': [0, 4, 7, 14],
+}
+
+_TEMPLATES: dict[str, np.ndarray] = {}
+
+
+def _build_templates() -> None:
+    for i, note in enumerate(NOTES):
+        for quality, ivs in _CHORD_INTERVALS.items():
+            tpl = np.zeros(12, dtype=np.float32)
+            for iv in ivs:
+                tpl[(i + iv) % 12] = 1.0
+            tpl /= np.linalg.norm(tpl)
+            _TEMPLATES[f'{note}{quality}'] = tpl
+
+
+_build_templates()
+
+MIN_CONFIDENCE = 0.62  # cosine similarity ; en dessous → 'N' (pas d'accord)
+
+
 # ── Couleurs et noms ──────────────────────────────────────────────────
-# Le moteur de détection (madmom) ne reconnaît que les accords
-# majeur/mineur ; ces tables ne couvrent donc que '' (majeur), 'm'
-# (mineur) et 'N' (pas d'accord).
 
 CHORD_TYPE_NAMES: dict[str, str] = {
-    'm': 'Mineur',
-    '':  'Majeur',
-    'N': '',
+    'add9': 'Ajouté 9ème',
+    'maj7': 'Majeur 7ème',
+    'm7':   'Mineur 7ème',
+    'sus2': 'Suspendu 2nde',
+    'sus4': 'Suspendu 4te',
+    'dim':  'Diminué',
+    'aug':  'Augmenté',
+    '7':    'Dominante 7ème',
+    'm':    'Mineur',
+    '':     'Majeur',
+    'N':    '',
 }
 
 CHORD_COLORS: dict[str, str] = {
-    'm': '#EF9A9A',
-    '':  '#4FC3F7',
-    'N': '#555555',
+    'add9': '#4DB6AC',
+    'maj7': '#80DEEA',
+    'm7':   '#CE93D8',
+    'sus2': '#FFD54F',
+    'sus4': '#FFD54F',
+    'dim':  '#FF8A65',
+    'aug':  '#B39DDB',
+    '7':    '#A5D6A7',
+    'm':    '#EF9A9A',
+    '':     '#4FC3F7',
+    'N':    '#555555',
 }
 
 
 def chord_quality(chord: str) -> str:
     if chord == 'N':
         return 'N'
-    return 'm' if chord.endswith('m') else ''
+    for suffix in ('add9', 'maj7', 'm7', 'sus2', 'sus4', 'dim', 'aug', '7', 'm'):
+        if chord.endswith(suffix):
+            return suffix
+    return ''
 
 
 def chord_color(chord: str) -> str:
@@ -49,15 +101,6 @@ def transpose_chord(chord: str, semitones: int) -> str:
             new_root = NOTES[(i + semitones) % 12]
             return new_root + chord[len(note):]
     return chord
-
-
-def _madmom_label_to_chord(label: str) -> str:
-    """Convertit un label madmom ('C:maj', 'A:min', 'N') vers notre
-    format ('C', 'Am', 'N')."""
-    if label == 'N':
-        return 'N'
-    root, _, quality = label.partition(':')
-    return root if quality == 'maj' else root + 'm'
 
 
 # ── Détection de tonalité (Krumhansl-Kessler) ─────────────────────────
@@ -138,6 +181,50 @@ def _estimate_tempo(y: np.ndarray, sr: int, hop_length: int) -> float:
     return 60.0 * fps / best_lag
 
 
+def _match_frame(frame: np.ndarray) -> tuple[str, float]:
+    """Accord le plus proche (corrélation cosinus) du vecteur chroma
+    (12-dim) donné, ou 'N' si rien ne dépasse MIN_CONFIDENCE."""
+    norm = float(np.linalg.norm(frame))
+    if norm == 0.0:
+        return 'N', 0.0
+    frame = frame / norm
+    best_name, best_score = 'N', MIN_CONFIDENCE
+    for name, tpl in _TEMPLATES.items():
+        score = float(np.dot(frame, tpl))
+        if score > best_score:
+            best_name, best_score = name, score
+    return best_name, best_score
+
+
+def _chroma_to_bar_chords(
+    chroma: np.ndarray, duration: float, tempo_bpm: float,
+) -> list[dict]:
+    """Regroupe les frames de chroma par mesure (médiane, hypothèse
+    4/4 à tempo constant) puis fait correspondre chaque mesure au
+    gabarit d'accord le plus proche. Fusionne les mesures consécutives
+    identiques en segments {'time', 'end', 'chord'}."""
+    n_frames = chroma.shape[0]
+    if n_frames == 0 or duration <= 0:
+        return []
+    fps = n_frames / duration
+    bar_dur = bars_per_chord(tempo_bpm)
+    n_bars = max(1, round(duration / bar_dur))
+
+    chords: list[dict] = []
+    for b in range(n_bars):
+        t0 = b * bar_dur
+        t1 = min((b + 1) * bar_dur, duration)
+        f0 = min(int(t0 * fps), n_frames - 1)
+        f1 = max(f0 + 1, min(int(t1 * fps), n_frames))
+        bar_chroma = np.median(chroma[f0:f1], axis=0).astype(np.float32)
+        name, _ = _match_frame(bar_chroma)
+        if chords and chords[-1]['chord'] == name:
+            chords[-1]['end'] = t1
+        else:
+            chords.append({'time': t0, 'end': t1, 'chord': name})
+    return chords
+
+
 def _to_wav_if_needed(filepath: str) -> tuple[str, bool]:
     """Convertit m4a/aac en wav via ffmpeg si nécessaire. Retourne (chemin, converti)."""
     ext = os.path.splitext(filepath)[1].lower()
@@ -162,9 +249,11 @@ def detect_chords(
     progress_callback=None,
 ) -> tuple[list[dict], float, str, str, float]:
     """
-    Détecte les accords (majeur/mineur) via le modèle pré-entraîné madmom
-    (extracteur de chroma par CNN + décodage CRF), et la tonalité à
-    partir du même chroma.
+    Détecte les accords (vocabulaire enrichi : maj/min/7/maj7/m7/sus2/
+    sus4/dim/aug/add9) par corrélation gabarits sur le chroma « profond »
+    pré-entraîné de madmom (CNN, beaucoup moins bruité qu'un chroma STFT
+    classique), agrégé mesure par mesure. La tonalité utilise ce même
+    chroma.
 
     Retourne : (chords, duration, key_en, key_fr, tempo_bpm)
     """
@@ -191,7 +280,7 @@ def detect_chords(
         key_en, key_fr = detect_key(chroma.T)
         cb(70)
 
-        segments = DeepChromaChordRecognitionProcessor()(chroma)
+        chords = _chroma_to_bar_chords(chroma, duration, tempo_bpm)
         cb(95)
     finally:
         if converted:
@@ -199,15 +288,6 @@ def detect_chords(
                 os.unlink(load_path)
             except OSError:
                 pass
-
-    chords = [
-        {
-            'time':  float(start),
-            'end':   float(end),
-            'chord': _madmom_label_to_chord(label),
-        }
-        for start, end, label in segments
-    ]
 
     cb(100)
     return chords, duration, key_en, key_fr, tempo_bpm
