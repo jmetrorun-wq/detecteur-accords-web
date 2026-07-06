@@ -352,8 +352,14 @@ html, body {
 .chord-chip.active {
   border-color: var(--accent);
 }
-.chip-time {
+.chip-measure {
   font-size: 0.65rem;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.chip-time {
+  font-size: 0.6rem;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }

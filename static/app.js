@@ -185,6 +185,14 @@ function currentChords() {
   }));
 }
 
+// Numéro de mesure (hypothèse 4/4, tempo constant — même calcul que
+// bars_per_chord côté serveur).
+function measureNumber(time) {
+  if (!state.tempo) return 1;
+  const barDur = 4 * 60 / state.tempo;
+  return Math.floor(time / barDur) + 1;
+}
+
 function renderChordList() {
   chordListEl.innerHTML = '';
   const chords = currentChords();
@@ -194,8 +202,9 @@ function renderChordList() {
     chip.dataset.chord = c.chord;
     chip.dataset.idx   = idx;
     chip.innerHTML = `
-      <span class="chip-time">${fmtTime(c.time)}</span>
+      <span class="chip-measure">M${measureNumber(c.time)}</span>
       <span class="chip-name" style="color:${c.color}">${c.chord === 'N' ? '–' : c.chord}</span>
+      <span class="chip-time">${fmtTime(c.time)}</span>
     `;
     chip.addEventListener('click', () => {
       audioEl.currentTime = c.time + 0.05;
