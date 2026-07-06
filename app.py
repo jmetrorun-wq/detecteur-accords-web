@@ -136,6 +136,14 @@ def analyze_youtube():
         }) as ydl:
             info = ydl.extract_info(url, download=False)
     except Exception as exc:
+        if 'Sign in to confirm' in str(exc):
+            return jsonify({
+                'error': (
+                    "YouTube bloque temporairement l'analyse de liens "
+                    "depuis ce serveur. Réessaie plus tard, ou utilise "
+                    "l'upload de fichier audio à la place."
+                )
+            }), 400
         return jsonify({'error': f'Vidéo introuvable : {exc}'}), 400
 
     video_duration = info.get('duration') or 0
@@ -166,6 +174,14 @@ def analyze_youtube():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
     except Exception as exc:
+        if 'Sign in to confirm' in str(exc):
+            return jsonify({
+                'error': (
+                    "YouTube bloque temporairement l'analyse de liens "
+                    "depuis ce serveur. Réessaie plus tard, ou utilise "
+                    "l'upload de fichier audio à la place."
+                )
+            }), 400
         return jsonify({'error': f'Téléchargement échoué : {exc}'}), 500
 
     file_id_ext = file_id + '.wav'
