@@ -336,36 +336,40 @@ html, body {
 .chord-list::-webkit-scrollbar {
   display: none;
 }
-.chord-chip {
+.measure-chip {
   display: flex;
   flex-direction: column;
   align-items: center;
   flex-shrink: 0;
-  padding: 0.35rem 0.6rem;
+  padding: 0.4rem 0.6rem;
   border-radius: 8px;
   cursor: pointer;
   border: 2px solid transparent;
-  min-width: 52px;
+  min-width: 56px;
   transition: border-color 0.1s;
   background: var(--surface2);
 }
-.chord-chip.active {
+.measure-chip.active {
   border-color: var(--accent);
-}
-.chip-measure {
-  font-size: 0.65rem;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-}
-.chip-time {
-  font-size: 0.6rem;
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
 }
 .chip-name {
   font-size: 1rem;
   font-weight: 700;
-  margin-top: 0.1rem;
 }
-.chord-chip[data-chord="N"] .chip-name { color: #555; }
+.chip-beats {
+  display: flex;
+  gap: 4px;
+  margin-top: 0.35rem;
+}
+.beat-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  opacity: 0.4;
+}
+.beat-dot.on {
+  background: var(--accent);
+  opacity: 1;
+  transform: scale(1.4);
+}

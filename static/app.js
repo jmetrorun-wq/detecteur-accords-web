@@ -10,7 +10,10 @@ const state = {
   tempo:     0,
   fileId:    null,
   transpose: 0,
-  activeIdx: -1,       // index de l'accord en cours
+  activeIdx: -1,       // index de l'accord en cours (segment précis)
+  measures:  [],       // [{start, end, chord, color}, ...] une par mesure
+  activeMeasureIdx: -1,
+  activeBeat: -1,      // 0-3, temps en cours dans la mesure active
 };
 
 // ── DOM ────────────────────────────────────────────────────────────
@@ -165,9 +168,9 @@ function applyResults(data) {
   btnPlay.textContent = '▶';
 
   renderHeader();
-  renderChordList();
+  renderMeasures();
   showScreen('results');
-  updateChordAt(0);
+  updateAt(0);
 }
 
 // ── Affichage ──────────────────────────────────────────────────────
@@ -185,35 +188,61 @@ function currentChords() {
   }));
 }
 
-// Numéro de mesure (hypothèse 4/4, tempo constant — même calcul que
+// Durée d'une mesure (hypothèse 4/4, tempo constant — même formule que
 // bars_per_chord côté serveur).
-function measureNumber(time) {
-  if (!state.tempo) return 1;
-  const barDur = 4 * 60 / state.tempo;
-  return Math.floor(time / barDur) + 1;
+function barDuration() {
+  return state.tempo ? 4 * 60 / state.tempo : 2;
 }
 
-function renderChordList() {
-  chordListEl.innerHTML = '';
+// Convertit la liste d'accords (segments à durée variable) en une case
+// par mesure — même principe que chords_to_bar_tokens côté serveur —
+// pour un défilement façon Chordify (mesures de taille uniforme, un
+// point par temps).
+function computeMeasures() {
   const chords = currentChords();
-  chords.forEach((c, idx) => {
+  if (!chords.length || !state.duration || !state.tempo) return [];
+  const barDur = barDuration();
+  const nBars = Math.max(1, Math.round(state.duration / barDur));
+  const measures = [];
+  let ci = 0;
+  for (let b = 0; b < nBars; b++) {
+    const t0 = b * barDur;
+    const t1 = Math.min((b + 1) * barDur, state.duration);
+    const tMid = (b + 0.5) * barDur;
+    while (ci + 1 < chords.length && chords[ci].end <= tMid) ci++;
+    measures.push({ start: t0, end: t1, chord: chords[ci].chord, color: chords[ci].color });
+  }
+  return measures;
+}
+
+function renderMeasures() {
+  chordListEl.innerHTML = '';
+  state.measures = computeMeasures();
+  state.activeMeasureIdx = -1;
+  state.activeBeat = -1;
+  state.measures.forEach((m, idx) => {
     const chip = document.createElement('div');
-    chip.className = 'chord-chip';
-    chip.dataset.chord = c.chord;
-    chip.dataset.idx   = idx;
+    chip.className = 'measure-chip';
+    chip.dataset.idx = idx;
     chip.innerHTML = `
-      <span class="chip-measure">M${measureNumber(c.time)}</span>
-      <span class="chip-name" style="color:${c.color}">${c.chord === 'N' ? '–' : c.chord}</span>
-      <span class="chip-time">${fmtTime(c.time)}</span>
+      <span class="chip-name" style="color:${m.color}">${m.chord === 'N' ? '–' : m.chord}</span>
+      <span class="chip-beats">
+        <span class="beat-dot" data-beat="0"></span>
+        <span class="beat-dot" data-beat="1"></span>
+        <span class="beat-dot" data-beat="2"></span>
+        <span class="beat-dot" data-beat="3"></span>
+      </span>
     `;
     chip.addEventListener('click', () => {
-      audioEl.currentTime = c.time + 0.05;
+      audioEl.currentTime = m.start + 0.05;
       if (audioEl.paused) audioEl.play().catch(() => {});
     });
     chordListEl.appendChild(chip);
   });
 }
 
+// Met à jour le gros accord / piano / guitare (segments réels, précis —
+// indépendant des mesures pour ne pas réintroduire de décalage).
 function updateChordAt(time) {
   const chords = currentChords();
   let idx = -1;
@@ -237,17 +266,42 @@ function updateChordAt(time) {
 
   // Guitare
   drawGuitar(guitarSvg, guitarLabel, chordName !== '—' ? chordName : null);
+}
 
-  // Chip actif
-  document.querySelectorAll('.chord-chip').forEach(el => {
-    el.classList.toggle('active', Number(el.dataset.idx) === idx);
-  });
+// Met à jour la case de mesure active et le point de temps (un seul
+// point allumé à la fois = le temps en cours, façon métronome).
+function updateMeasureAt(time) {
+  const measures = state.measures;
+  if (!measures || !measures.length) return;
+  const barDur = barDuration();
+  let idx = Math.floor(time / barDur);
+  idx = Math.max(0, Math.min(measures.length - 1, idx));
+  const beat = Math.max(0, Math.min(3, Math.floor(((time - idx * barDur) / barDur) * 4)));
 
-  // Défilement auto : centre l'accord actif dans la barre horizontale
-  if (idx >= 0) {
+  if (idx !== state.activeMeasureIdx) {
+    document.querySelectorAll('.measure-chip').forEach(el => {
+      el.classList.toggle('active', Number(el.dataset.idx) === idx);
+    });
     const chip = chordListEl.querySelector(`[data-idx="${idx}"]`);
     if (chip) chip.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    state.activeMeasureIdx = idx;
+    state.activeBeat = -1;
   }
+
+  if (beat !== state.activeBeat) {
+    const chip = chordListEl.querySelector(`[data-idx="${idx}"]`);
+    if (chip) {
+      chip.querySelectorAll('.beat-dot').forEach(dot => {
+        dot.classList.toggle('on', Number(dot.dataset.beat) === beat);
+      });
+    }
+    state.activeBeat = beat;
+  }
+}
+
+function updateAt(time) {
+  updateChordAt(time);
+  updateMeasureAt(time);
 }
 
 // ── Lecteur audio ──────────────────────────────────────────────────
@@ -273,7 +327,7 @@ seekBar.addEventListener('input', () => {
 seekBar.addEventListener('change', () => {
   audioEl.currentTime = Number(seekBar.value);
   isSeeking = false;
-  updateChordAt(audioEl.currentTime);
+  updateAt(audioEl.currentTime);
 });
 
 // Mise à jour en cours de lecture : `timeupdate` ne se déclenche que
@@ -288,7 +342,7 @@ function syncLoop() {
     seekBar.value = String(t);
     timeCurrent.textContent = fmtTime(t);
   }
-  updateChordAt(t);
+  updateAt(t);
   syncLoopId = requestAnimationFrame(syncLoop);
 }
 
@@ -301,7 +355,7 @@ function stopSyncLoop() {
     cancelAnimationFrame(syncLoopId);
     syncLoopId = null;
   }
-  updateChordAt(audioEl.currentTime);
+  updateAt(audioEl.currentTime);
 }
 
 // ── Transposition ──────────────────────────────────────────────────
@@ -311,10 +365,9 @@ btnTrUp.addEventListener('click',   () => setTranspose(state.transpose + 1));
 function setTranspose(n) {
   state.transpose = Math.max(-11, Math.min(11, n));
   renderHeader();
-  renderChordList();
-  updateChordAt(audioEl.currentTime);
+  renderMeasures();
   state.activeIdx = -2; // force refresh
-  updateChordAt(audioEl.currentTime);
+  updateAt(audioEl.currentTime);
 }
 
 // ── Export PDF ─────────────────────────────────────────────────────
