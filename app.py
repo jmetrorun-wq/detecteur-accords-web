@@ -128,7 +128,12 @@ def analyze_youtube():
         return jsonify({'error': 'Lien YouTube invalide.'}), 400
 
     try:
-        with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True, 'noplaylist': True}) as ydl:
+        with yt_dlp.YoutubeDL({
+            'quiet': True,
+            'no_warnings': True,
+            'noplaylist': True,
+            'extractor_args': {'youtube': {'player_client': ['android']}},
+        }) as ydl:
             info = ydl.extract_info(url, download=False)
     except Exception as exc:
         return jsonify({'error': f'Vidéo introuvable : {exc}'}), 400
@@ -147,12 +152,15 @@ def analyze_youtube():
         # 'bestaudio' est désormais bloqué par YouTube sans PO Token ; le
         # format progressif classique ('best', généralement mp4 360p muxé)
         # reste accessible sans token et suffit pour l'extraction audio.
+        # Le client 'web' par défaut force le streaming SABR et exige un PO
+        # Token même sur ce format ; le client 'android' ne l'exige pas.
         'format': 'best',
         'outtmpl': os.path.join(UPLOAD_DIR, file_id + '.%(ext)s'),
         'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'wav'}],
         'noplaylist': True,
         'quiet': True,
         'no_warnings': True,
+        'extractor_args': {'youtube': {'player_client': ['android']}},
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
