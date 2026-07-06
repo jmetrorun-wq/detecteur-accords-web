@@ -2,8 +2,21 @@ services:
   - type: web
     name: detecteur-accords
     env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 180
+    buildCommand: >
+      pip install -r requirements.txt &&
+      curl -sL -o bgutil-pot
+      https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs/releases/download/v0.8.1/bgutil-pot-linux-x86_64 &&
+      chmod +x bgutil-pot
+    # Lance le serveur de PO Token (BotGuard, requis par YouTube pour
+    # confirmer qu'une requête ne vient pas d'un bot) en arrière-plan avant
+    # gunicorn ; le plugin yt-dlp dans yt_dlp_plugins/ s'y connecte sur
+    # 127.0.0.1:4416. PYTHONPATH exporté explicitement car gunicorn (contrairement
+    # à `python app.py`) n'ajoute pas toujours le cwd à sys.path, ce qui
+    # empêcherait la découverte du plugin en namespace package.
+    startCommand: >
+      bash -c 'export PYTHONPATH=$PWD:$PYTHONPATH; ./bgutil-pot server
+      --host 127.0.0.1 --port 4416 & exec gunicorn app:app --bind
+      0.0.0.0:$PORT --workers 1 --timeout 180'
     plan: free
     envVars:
       - key: NUMBA_DISABLE_JIT

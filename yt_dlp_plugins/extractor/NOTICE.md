@@ -1,0 +1,1 @@
+Fichiers vendorés depuis [jim60105/bgutil-ytdlp-pot-provider-rs](https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs) v0.8.1 (licence GPL-3.0), plugin yt-dlp pour le fournisseur de PO Token utilisé par `/api/analyze-youtube`. Non modifiés par rapport à l'upstream.
