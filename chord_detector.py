@@ -196,33 +196,40 @@ def _match_frame(frame: np.ndarray) -> tuple[str, float]:
     return best_name, best_score
 
 
-def _chroma_to_bar_chords(
-    chroma: np.ndarray, duration: float, tempo_bpm: float,
-) -> list[dict]:
-    """Regroupe les frames de chroma par mesure (médiane, hypothèse
-    4/4 à tempo constant) puis fait correspondre chaque mesure au
-    gabarit d'accord le plus proche. Fusionne les mesures consécutives
-    identiques en segments {'time', 'end', 'chord'}."""
+MIN_CHORD_DUR = 0.6  # secondes ; segments plus courts fusionnés au voisin
+
+
+def _chroma_to_chord_segments(chroma: np.ndarray, duration: float) -> list[dict]:
+    """Décode un accord par frame de chroma (grille temporelle réelle,
+    indépendante du tempo estimé — un tempo mal estimé ferait dériver
+    progressivement les accords par rapport à l'audio si on calait la
+    grille dessus), puis fusionne les frames consécutives identiques et
+    les segments trop courts (bruit d'une seule frame) au segment
+    précédent. Retourne {'time', 'end', 'chord'}."""
     n_frames = chroma.shape[0]
     if n_frames == 0 or duration <= 0:
         return []
     fps = n_frames / duration
-    bar_dur = bars_per_chord(tempo_bpm)
-    n_bars = max(1, round(duration / bar_dur))
 
-    chords: list[dict] = []
-    for b in range(n_bars):
-        t0 = b * bar_dur
-        t1 = min((b + 1) * bar_dur, duration)
-        f0 = min(int(t0 * fps), n_frames - 1)
-        f1 = max(f0 + 1, min(int(t1 * fps), n_frames))
-        bar_chroma = np.median(chroma[f0:f1], axis=0).astype(np.float32)
-        name, _ = _match_frame(bar_chroma)
-        if chords and chords[-1]['chord'] == name:
-            chords[-1]['end'] = t1
+    segments: list[dict] = []
+    for i in range(n_frames):
+        name, _ = _match_frame(chroma[i].astype(np.float32))
+        t = i / fps
+        if segments and segments[-1]['chord'] == name:
+            continue
+        segments.append({'time': t, 'end': 0.0, 'chord': name})
+    for i in range(len(segments) - 1):
+        segments[i]['end'] = segments[i + 1]['time']
+    if segments:
+        segments[-1]['end'] = duration
+
+    cleaned: list[dict] = []
+    for seg in segments:
+        if seg['end'] - seg['time'] < MIN_CHORD_DUR and cleaned:
+            cleaned[-1]['end'] = seg['end']
         else:
-            chords.append({'time': t0, 'end': t1, 'chord': name})
-    return chords
+            cleaned.append(seg)
+    return cleaned
 
 
 def _to_wav_if_needed(filepath: str) -> tuple[str, bool]:
@@ -252,8 +259,9 @@ def detect_chords(
     Détecte les accords (vocabulaire enrichi : maj/min/7/maj7/m7/sus2/
     sus4/dim/aug/add9) par corrélation gabarits sur le chroma « profond »
     pré-entraîné de madmom (CNN, beaucoup moins bruité qu'un chroma STFT
-    classique), agrégé mesure par mesure. La tonalité utilise ce même
-    chroma.
+    classique), frame par frame sur la grille temporelle réelle (pas de
+    dépendance au tempo estimé, pour rester synchronisé avec l'audio).
+    La tonalité utilise ce même chroma.
 
     Retourne : (chords, duration, key_en, key_fr, tempo_bpm)
     """
@@ -280,7 +288,7 @@ def detect_chords(
         key_en, key_fr = detect_key(chroma.T)
         cb(70)
 
-        chords = _chroma_to_bar_chords(chroma, duration, tempo_bpm)
+        chords = _chroma_to_chord_segments(chroma, duration)
         cb(95)
     finally:
         if converted:
