@@ -55,7 +55,7 @@ def index():
 def _analyze_and_respond(filepath: str, file_id: str, extra: Optional[dict] = None):
     """Lance detect_chords() sur filepath et construit la réponse JSON."""
     try:
-        chords, duration, key_en, key_fr, tempo = detect_chords(filepath)
+        chords, duration, key_en, key_fr, tempo, beats_per_bar, bar_times = detect_chords(filepath)
     except Exception as exc:
         try:
             os.unlink(filepath)
@@ -74,7 +74,7 @@ def _analyze_and_respond(filepath: str, file_id: str, extra: Optional[dict] = No
         for c in chords
     ]
 
-    structure = detect_structure(chords, tempo, duration)
+    structure = detect_structure(chords, bar_times, duration)
     structure_out = [
         {
             'label': s['label'],
@@ -85,13 +85,15 @@ def _analyze_and_respond(filepath: str, file_id: str, extra: Optional[dict] = No
     ]
 
     payload = {
-        'file_id':   file_id,
-        'duration':  round(duration, 2),
-        'key_en':    key_en,
-        'key_fr':    key_fr,
-        'tempo':     round(float(tempo)),
-        'chords':    chords_out,
-        'structure': structure_out,
+        'file_id':       file_id,
+        'duration':      round(duration, 2),
+        'key_en':        key_en,
+        'key_fr':        key_fr,
+        'tempo':         round(float(tempo)),
+        'beats_per_bar': beats_per_bar,
+        'bar_times':     [round(t, 3) for t in bar_times],
+        'chords':        chords_out,
+        'structure':     structure_out,
     }
     if extra:
         payload.update(extra)
@@ -202,6 +204,7 @@ def export_pdf():
     tempo = int(data.get('tempo') or 120)
     duration = float(data.get('duration') or 0)
     structure = data.get('structure') or []
+    bar_times = data.get('bar_times') or []
 
     try:
         pdf_bytes = build_chord_chart_pdf(
@@ -211,6 +214,7 @@ def export_pdf():
             chords=chords,
             structure=structure,
             duration=duration,
+            bar_times=bar_times,
         )
     except Exception as exc:
         return jsonify({'error': f"Erreur lors de la génération du PDF : {exc}"}), 500
