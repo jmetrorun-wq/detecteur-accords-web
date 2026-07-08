@@ -356,6 +356,19 @@ html, body {
   font-size: 1rem;
   font-weight: 700;
 }
+.chip-names-multi {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  max-width: 140px;
+}
+.chip-name-sub {
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .chip-beats {
   display: flex;
   gap: 4px;
@@ -372,4 +385,70 @@ html, body {
   background: var(--accent);
   opacity: 1;
   transform: scale(1.4);
+}
+
+/* ── Séparation de pistes ───────────────────────────────────────── */
+.separate-panel {
+  padding: 0.75rem 1rem 1.25rem;
+  border-top: 1px solid var(--border);
+}
+.hidden { display: none !important; }
+.separate-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.separate-progress-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface2);
+  overflow: hidden;
+}
+.separate-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+.separate-progress-label {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  min-width: 36px;
+  text-align: right;
+}
+.separate-error {
+  color: #FF8A65;
+  font-size: 0.9rem;
+}
+.separate-stems {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.separate-stem {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--surface2);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+}
+.stem-label {
+  min-width: 70px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.stem-audio {
+  flex: 1;
+  height: 32px;
+}
+.stem-download {
+  font-size: 1.1rem;
+  color: var(--accent);
+  text-decoration: none;
+  padding: 0.2rem 0.4rem;
+}
+#btn-reanalyze-other {
+  margin-top: 0.3rem;
 }

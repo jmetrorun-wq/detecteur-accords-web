@@ -44,6 +44,14 @@ const btnTrUp         = document.getElementById('btn-tr-up');
 const trLabel         = document.getElementById('tr-label');
 const btnExportPdf    = document.getElementById('btn-export-pdf');
 const audioEl         = document.getElementById('audio-player');
+const btnSeparate       = document.getElementById('btn-separate');
+const separatePanel     = document.getElementById('separate-panel');
+const separateProgWrap  = document.getElementById('separate-progress-wrap');
+const separateProgFill  = document.getElementById('separate-progress-fill');
+const separateProgLabel = document.getElementById('separate-progress-label');
+const separateErrorEl   = document.getElementById('separate-error');
+const separateStemsEl   = document.getElementById('separate-stems');
+const btnReanalyzeOther = document.getElementById('btn-reanalyze-other');
 
 // ── Utilitaires ────────────────────────────────────────────────────
 function showScreen(name) {
@@ -171,8 +179,19 @@ function applyResults(data) {
 
   renderHeader();
   renderMeasures();
+  resetSeparatePanel();
   showScreen('results');
   updateAt(0);
+}
+
+function resetSeparatePanel() {
+  clearTimeout(separatePollId);
+  separateJobId = null;
+  separatePanel.classList.add('hidden');
+  separateProgWrap.classList.add('hidden');
+  separateErrorEl.classList.add('hidden');
+  separateStemsEl.classList.add('hidden');
+  setSeparateProgress(0);
 }
 
 // ── Affichage ──────────────────────────────────────────────────────
@@ -194,7 +213,9 @@ function currentChords() {
 // par mesure, sur la grille de mesures réelle détectée côté serveur
 // (state.barTimes — cf. detect_meter/chords_to_bar_tokens côté Python)
 // — pour un défilement façon Chordify (mesures de taille uniforme au
-// sein d'un même morceau, un point par temps).
+// sein d'un même morceau, un point par temps). Une mesure garde TOUS les
+// accords qui la traversent (pas un seul pris au milieu) : sinon un
+// changement d'accord en cours de mesure disparaissait silencieusement.
 function computeMeasures() {
   const chords = currentChords();
   const barTimes = state.barTimes;
@@ -204,9 +225,19 @@ function computeMeasures() {
   for (let b = 0; b < barTimes.length; b++) {
     const t0 = barTimes[b];
     const t1 = b + 1 < barTimes.length ? barTimes[b + 1] : state.duration;
-    const tMid = (t0 + t1) / 2;
-    while (ci + 1 < chords.length && chords[ci].end <= tMid) ci++;
-    measures.push({ start: t0, end: t1, chord: chords[ci].chord, color: chords[ci].color });
+    while (ci + 1 < chords.length && chords[ci].end <= t0) ci++;
+    const segments = [];
+    for (let j = ci; j < chords.length && chords[j].time < t1; j++) {
+      const segStart = Math.max(t0, chords[j].time);
+      const segEnd = Math.min(t1, chords[j].end);
+      if (segEnd > segStart) {
+        segments.push({ start: segStart, end: segEnd, chord: chords[j].chord, color: chords[j].color });
+      }
+    }
+    if (!segments.length) {
+      segments.push({ start: t0, end: t1, chord: chords[ci].chord, color: chords[ci].color });
+    }
+    measures.push({ start: t0, end: t1, segments });
   }
   return measures;
 }
@@ -224,8 +255,12 @@ function renderMeasures() {
     const chip = document.createElement('div');
     chip.className = 'measure-chip';
     chip.dataset.idx = idx;
+    const barDur = Math.max(0.001, m.end - m.start);
+    const namesHtml = m.segments.length === 1
+      ? `<span class="chip-name" style="color:${m.segments[0].color}">${m.segments[0].chord === 'N' ? '–' : m.segments[0].chord}</span>`
+      : `<span class="chip-names-multi">${m.segments.map(s => `<span class="chip-name-sub" style="color:${s.color}; flex-grow:${Math.max(0.2, (s.end - s.start) / barDur)}">${s.chord === 'N' ? '–' : s.chord}</span>`).join('')}</span>`;
     chip.innerHTML = `
-      <span class="chip-name" style="color:${m.color}">${m.chord === 'N' ? '–' : m.chord}</span>
+      ${namesHtml}
       <span class="chip-beats">${beatDots}</span>
     `;
     chip.addEventListener('click', () => {
@@ -407,6 +442,103 @@ btnExportPdf.addEventListener('click', async () => {
     alert(`Erreur export PDF : ${err.message}`);
   } finally {
     btnExportPdf.disabled = false;
+  }
+});
+
+// ── Séparation de pistes ───────────────────────────────────────────
+const STEM_LABELS = { vocals: 'Voix', drums: 'Batterie', bass: 'Basse', other: 'Autre' };
+let separatePollId = null;
+let separateJobId = null;
+
+btnSeparate.addEventListener('click', () => {
+  if (!state.fileId) return;
+  separatePanel.classList.remove('hidden');
+  separateErrorEl.classList.add('hidden');
+  separateStemsEl.classList.add('hidden');
+  separateProgWrap.classList.remove('hidden');
+  setSeparateProgress(0);
+  startSeparation(state.fileId);
+});
+
+async function startSeparation(fileId) {
+  try {
+    const res = await fetch('/api/separate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_id: fileId }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? `Erreur ${res.status}`);
+    separateJobId = data.job_id;
+    pollSeparateStatus();
+  } catch (err) {
+    showSeparateError(err.message);
+  }
+}
+
+function pollSeparateStatus() {
+  clearTimeout(separatePollId);
+  separatePollId = setTimeout(async () => {
+    try {
+      const res = await fetch(`/api/separate/status/${separateJobId}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `Erreur ${res.status}`);
+
+      if (data.status === 'error') {
+        showSeparateError(data.error ?? 'Erreur inconnue.');
+        return;
+      }
+      setSeparateProgress(data.progress ?? 0);
+      if (data.status === 'done') {
+        showSeparateStems(separateJobId);
+        return;
+      }
+      pollSeparateStatus();
+    } catch (err) {
+      showSeparateError(err.message);
+    }
+  }, 1500);
+}
+
+function setSeparateProgress(pct) {
+  separateProgFill.style.width = `${pct}%`;
+  separateProgLabel.textContent = `${pct}%`;
+}
+
+function showSeparateError(message) {
+  clearTimeout(separatePollId);
+  separateProgWrap.classList.add('hidden');
+  separateErrorEl.textContent = message;
+  separateErrorEl.classList.remove('hidden');
+}
+
+function showSeparateStems(jobId) {
+  separateProgWrap.classList.add('hidden');
+  separateStemsEl.classList.remove('hidden');
+  separateStemsEl.querySelectorAll('.separate-stem').forEach((el) => {
+    const stem = el.dataset.stem;
+    const url = `/api/separate/download/${jobId}/${stem}`;
+    const audio = el.querySelector('.stem-audio');
+    const link = el.querySelector('.stem-download');
+    audio.src = url;
+    link.href = url;
+    link.download = `${STEM_LABELS[stem] ?? stem}.mp3`;
+  });
+}
+
+btnReanalyzeOther.addEventListener('click', async () => {
+  if (!separateJobId) return;
+  btnReanalyzeOther.disabled = true;
+  loadingFilename.textContent = 'Piste sans batterie/voix';
+  showScreen('loading');
+  try {
+    await performAnalyze(fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ existing_file_id: `sep_${separateJobId}_other.mp3` }),
+    }));
+  } finally {
+    btnReanalyzeOther.disabled = false;
   }
 });
 

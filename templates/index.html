@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Accords">
+  <meta name="apple-mobile-web-app-title" content="ChordSplit">
   <meta name="theme-color" content="#1E1E2E">
   <link rel="manifest" href="/static/manifest.json">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
-  <title>Détecteur d'Accords</title>
+  <title>ChordSplit</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -20,8 +20,8 @@
   <section id="screen-upload" class="screen active">
     <div class="upload-center">
       <div class="app-logo">🎵</div>
-      <h1 class="app-title">Détecteur<br>d'Accords</h1>
-      <p class="app-subtitle">Analysez les accords de n'importe quelle chanson</p>
+      <h1 class="app-title">ChordSplit</h1>
+      <p class="app-subtitle">Détectez les accords et séparez les pistes de n'importe quelle chanson</p>
 
       <label class="btn-upload" for="file-input">
         <span class="btn-icon">📂</span>
@@ -66,6 +66,7 @@
         <button id="btn-tr-up" class="btn-small">+♯</button>
       </div>
       <button id="btn-export-pdf" class="btn-icon-only" title="Exporter en PDF">📄</button>
+      <button id="btn-separate" class="btn-icon-only" title="Séparer les pistes">🎚️</button>
     </header>
 
     <!-- Accord courant (gros) -->
@@ -99,6 +100,40 @@
 
     <!-- Grille des accords -->
     <div id="chord-list" class="chord-list"></div>
+
+    <!-- Séparation de pistes -->
+    <div id="separate-panel" class="separate-panel hidden">
+      <div id="separate-progress-wrap" class="separate-progress-wrap hidden">
+        <div class="separate-progress-bar">
+          <div id="separate-progress-fill" class="separate-progress-fill"></div>
+        </div>
+        <span id="separate-progress-label" class="separate-progress-label">0%</span>
+      </div>
+      <div id="separate-error" class="separate-error hidden"></div>
+      <div id="separate-stems" class="separate-stems hidden">
+        <div class="separate-stem" data-stem="vocals">
+          <span class="stem-label">Voix</span>
+          <audio class="stem-audio" controls preload="none"></audio>
+          <a class="stem-download" title="Télécharger">⬇</a>
+        </div>
+        <div class="separate-stem" data-stem="drums">
+          <span class="stem-label">Batterie</span>
+          <audio class="stem-audio" controls preload="none"></audio>
+          <a class="stem-download" title="Télécharger">⬇</a>
+        </div>
+        <div class="separate-stem" data-stem="bass">
+          <span class="stem-label">Basse</span>
+          <audio class="stem-audio" controls preload="none"></audio>
+          <a class="stem-download" title="Télécharger">⬇</a>
+        </div>
+        <div class="separate-stem" data-stem="other">
+          <span class="stem-label">Autre</span>
+          <audio class="stem-audio" controls preload="none"></audio>
+          <a class="stem-download" title="Télécharger">⬇</a>
+        </div>
+        <button id="btn-reanalyze-other" class="btn-youtube">Ré-analyser les accords sans batterie/voix</button>
+      </div>
+    </div>
 
   </section>
 

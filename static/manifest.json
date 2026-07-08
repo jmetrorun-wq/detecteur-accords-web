@@ -1,7 +1,7 @@
 {
-  "name": "Détecteur d'Accords",
-  "short_name": "Accords",
-  "description": "Détectez les accords de n'importe quelle chanson",
+  "name": "ChordSplit",
+  "short_name": "ChordSplit",
+  "description": "Détectez les accords et séparez les pistes de n'importe quelle chanson",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0C0C18",

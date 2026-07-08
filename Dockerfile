@@ -10,6 +10,30 @@ COPY . .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Séparation de pistes (demucs) : uniquement installé ici (Cloud Run),
+# jamais dans requirements.txt (Render, 512 Mo — torch seul coûte déjà
+# ~150 Mo rien qu'à l'import, cf. stem_separator.py). Roue CPU explicite
+# pour éviter de télécharger les variantes CUDA (inutiles ici, beaucoup
+# plus lourdes).
+#
+# Piège découvert en testant : NE PAS downgrader numpy<2 pour torch (une
+# tentation vu que torch 2.2.2 l'exige) — madmom (déjà installé juste
+# au-dessus, cf. son commit pinné) utilise `np.long`, réintroduit
+# uniquement à partir de numpy 2.0 avec une autre signification ; sous
+# numpy 1.26 ça casse toute la détection d'accords avec `module 'numpy'
+# has no attribute 'long'`. À la place : torch/torchaudio récents (pas
+# 2.2.2) qui supportent numpy>=2, + `torchcodec` (nouveau backend
+# d'encodage audio de torchaudio, requis depuis torchaudio ~2.4 sinon
+# demucs échoue à l'écriture des fichiers séparés avec
+# `ModuleNotFoundError: No module named 'torchcodec'`).
+RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir torchcodec --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir demucs
+
+# Pré-télécharge les poids du modèle htdemucs (~80 Mo) pendant le build,
+# pour ne pas payer ce téléchargement au premier vrai cold start.
+RUN python -c "from demucs.pretrained import get_model; get_model('htdemucs')"
+
 RUN curl -sL -o bgutil-pot \
     https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs/releases/download/v0.8.1/bgutil-pot-linux-x86_64 \
     && chmod +x bgutil-pot

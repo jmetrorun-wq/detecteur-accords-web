@@ -1,8 +1,9 @@
-"""Backend Flask pour le Détecteur d'Accords Web (version iPhone/PWA)."""
+"""Backend Flask pour ChordSplit (version iPhone/PWA)."""
 
 import io
 import os
 import re
+import subprocess
 import uuid
 import tempfile
 import threading
@@ -23,6 +24,32 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # Limite de durée pour les liens YouTube : au-delà, le pic mémoire de
 # l'analyse (STFT + chroma) dépasse la RAM du plan gratuit Render (512 Mo).
 MAX_YOUTUBE_DURATION_S = 360
+
+# Limite de durée pour la séparation de pistes (demucs) : la RAM du
+# sous-processus croît avec la durée du morceau (~3,3 Go mesurés sur 5min38,
+# cf. stem_separator.py) — on borne pour rester dans la marge du plan
+# Cloud Run même avec le reste du pipeline actif à côté.
+MAX_SEPARATION_DURATION_S = 480
+
+# Séparation de pistes : uniquement disponible sur le déploiement Cloud Run
+# (torch/torchaudio/demucs installés seulement dans le Dockerfile, jamais
+# dans requirements.txt/Render — cf. stem_separator.py). Gardé par cette
+# variable d'environnement, sur le même principe qu'ENABLE_METER_DETECTION.
+STEM_SEPARATION_ENABLED = bool(os.environ.get('ENABLE_STEM_SEPARATION'))
+
+
+def _probe_duration(filepath: str) -> float:
+    """Durée d'un fichier audio via ffprobe (gère tous les formats,
+    contrairement à soundfile qui ne lit pas l'AAC/M4A)."""
+    try:
+        out = subprocess.run(
+            ['ffprobe', '-v', 'quiet', '-show_entries', 'format=duration',
+             '-of', 'csv=p=0', filepath],
+            capture_output=True, text=True, timeout=10,
+        )
+        return float(out.stdout.strip())
+    except (ValueError, subprocess.SubprocessError):
+        return 0.0
 
 YOUTUBE_URL_RE = re.compile(
     r'^https?://(www\.|m\.)?(youtube\.com/(watch\?|shorts/)|youtu\.be/)',
@@ -102,6 +129,18 @@ def _analyze_and_respond(filepath: str, file_id: str, extra: Optional[dict] = No
 
 @app.route('/api/analyze', methods=['POST'])
 def analyze():
+    # Ré-analyse d'une piste déjà séparée (cf. /api/separate) : évite de
+    # re-télécharger/ré-uploader un fichier déjà présent côté serveur.
+    # Restreint aux fichiers `sep_*.wav` qu'on a nous-mêmes produits.
+    existing_id = request.form.get('existing_file_id') \
+        or (request.get_json(silent=True) or {}).get('existing_file_id')
+    if existing_id:
+        safe_id = os.path.basename(existing_id)
+        filepath = os.path.join(UPLOAD_DIR, safe_id)
+        if not safe_id.startswith('sep_') or not os.path.exists(filepath):
+            return jsonify({'error': 'Fichier introuvable.'}), 400
+        return _analyze_and_respond(filepath, safe_id)
+
     if 'audio' not in request.files:
         return jsonify({'error': 'Aucun fichier audio reçu.'}), 400
 
@@ -231,6 +270,67 @@ def export_pdf():
 def serve_audio(file_id):
     """Sert le fichier audio avec support Range (obligatoire pour iOS)."""
     filepath = os.path.join(UPLOAD_DIR, file_id)
+    if not os.path.exists(filepath):
+        return 'Fichier introuvable', 404
+    return send_file(filepath, conditional=True)
+
+
+@app.route('/api/separate', methods=['POST'])
+def separate():
+    if not STEM_SEPARATION_ENABLED:
+        return jsonify({'error': 'Séparation de pistes indisponible sur ce déploiement.'}), 501
+
+    data = request.get_json(silent=True) or {}
+    file_id = (data.get('file_id') or '').strip()
+    filepath = os.path.join(UPLOAD_DIR, file_id)
+    if not file_id or not os.path.exists(filepath):
+        return jsonify({'error': 'Fichier introuvable (relance une analyse).'}), 400
+
+    duration = _probe_duration(filepath)
+    if duration > MAX_SEPARATION_DURATION_S:
+        return jsonify({
+            'error': (
+                f'Morceau trop long ({duration // 60:.0f} min) : '
+                f'{MAX_SEPARATION_DURATION_S // 60} min max pour la séparation.'
+            )
+        }), 400
+
+    from stem_separator import start_job
+    try:
+        job_id = start_job(filepath, UPLOAD_DIR)
+    except RuntimeError as exc:
+        return jsonify({'error': str(exc)}), 409
+
+    return jsonify({'job_id': job_id})
+
+
+@app.route('/api/separate/status/<job_id>')
+def separate_status(job_id):
+    if not STEM_SEPARATION_ENABLED:
+        return jsonify({'error': 'Séparation de pistes indisponible sur ce déploiement.'}), 501
+
+    from stem_separator import get_status, STEMS
+    job = get_status(job_id)
+    if not job:
+        return jsonify({'error': 'Job introuvable.'}), 404
+
+    out = {'status': job['status'], 'progress': job['progress']}
+    if job['status'] == 'error':
+        out['error'] = job['error']
+    if job['status'] == 'done':
+        out['stems'] = list(STEMS)
+    return jsonify(out)
+
+
+@app.route('/api/separate/download/<job_id>/<stem>')
+def separate_download(job_id, stem):
+    if not STEM_SEPARATION_ENABLED:
+        return 'Séparation de pistes indisponible sur ce déploiement.', 501
+
+    from stem_separator import STEMS
+    if stem not in STEMS:
+        return 'Piste invalide', 404
+    filepath = os.path.join(UPLOAD_DIR, f'sep_{job_id}_{stem}.mp3')
     if not os.path.exists(filepath):
         return 'Fichier introuvable', 404
     return send_file(filepath, conditional=True)
