@@ -312,7 +312,7 @@ html, body {
 .piano-canvas {
   display: block;
   width: 100%;
-  max-width: 320px;
+  max-width: 480px;
   height: 110px;
   border-radius: 8px;
   background: #0C0C18;
