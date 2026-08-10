@@ -1,0 +1,36 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - build
+      - -t
+      - europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/detecteur-accords-web:$COMMIT_SHA
+      - .
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - push
+      - europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/detecteur-accords-web:$COMMIT_SHA
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - detecteur-accords-web
+      - --image=europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/detecteur-accords-web:$COMMIT_SHA
+      - --region=europe-west1
+      - --memory=6Gi
+      - --cpu=2
+      - --timeout=300
+      - --allow-unauthenticated
+      - --no-cpu-throttling
+      - --max-instances=1
+      - --set-env-vars=ENABLE_METER_DETECTION=1,ENABLE_STEM_SEPARATION=1
+
+images:
+  - europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/detecteur-accords-web:$COMMIT_SHA
+
+options:
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: 100
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 1800s
