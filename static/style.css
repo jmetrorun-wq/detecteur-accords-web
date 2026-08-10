@@ -302,25 +302,18 @@ html, body {
   min-height: 1.2em;
 }
 
-/* Piano */
+/* Piano : une octave zoomée sur l'accord joué */
 .piano-wrap {
   flex-shrink: 0;
   padding: 0.5rem 0.5rem 0;
-}
-.piano-labels {
   display: flex;
-  justify-content: space-between;
-  font-size: 0.7rem;
-  color: var(--text-dim);
-  padding: 0 4px;
-  margin-bottom: 2px;
+  justify-content: center;
 }
-.piano-label-lh { color: var(--lh-color); }
-.piano-label-rh { color: var(--accent); }
 .piano-canvas {
   display: block;
   width: 100%;
-  height: 90px;
+  max-width: 320px;
+  height: 110px;
   border-radius: 8px;
   background: #0C0C18;
 }
