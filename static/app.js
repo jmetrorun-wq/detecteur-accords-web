@@ -14,6 +14,7 @@ const state = {
   measures:  [],       // [{start, end, chord, color}, ...] une par mesure
   activeMeasureIdx: -1,
   activeBeat: -1,      // 0-3, temps en cours dans la mesure active
+  activeSegIdx: -1,    // index de l'accord actif au sein d'une mesure multi-accords
 };
 
 // ── DOM ────────────────────────────────────────────────────────────
@@ -348,6 +349,7 @@ function renderMeasures() {
   state.measures = computeMeasures();
   state.activeMeasureIdx = -1;
   state.activeBeat = -1;
+  state.activeSegIdx = -1;
   const beatDots = Array.from(
     { length: state.beatsPerBar },
     (_, i) => `<span class="beat-dot" data-beat="${i}"></span>`,
@@ -428,6 +430,7 @@ function updateMeasureAt(time) {
     if (chip) chip.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
     state.activeMeasureIdx = idx;
     state.activeBeat = -1;
+    state.activeSegIdx = -1;
   }
 
   if (beat !== state.activeBeat) {
@@ -438,6 +441,27 @@ function updateMeasureAt(time) {
       });
     }
     state.activeBeat = beat;
+  }
+
+  // Accord précis en cours au sein de la mesure active. Une mesure à
+  // plusieurs accords (harmonie qui change plus vite que la mesure, cas
+  // fréquent) ne montrait jusqu'ici aucun changement visuel avant la
+  // mesure suivante — seule la bordure de la case entière réagissait.
+  const segs = measures[idx].segments;
+  if (segs.length > 1) {
+    let segIdx = segs.length - 1;
+    for (let i = 0; i < segs.length; i++) {
+      if (time < segs[i].end) { segIdx = i; break; }
+    }
+    if (segIdx !== state.activeSegIdx) {
+      const chip = chordListEl.querySelector(`[data-idx="${idx}"]`);
+      if (chip) {
+        chip.querySelectorAll('.chip-name-sub').forEach((el, i) => {
+          el.classList.toggle('active', i === segIdx);
+        });
+      }
+      state.activeSegIdx = segIdx;
+    }
   }
 }
 

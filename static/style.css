@@ -443,6 +443,12 @@ html, body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  opacity: 0.4;
+  transition: opacity 0.15s, transform 0.15s;
+}
+.chip-name-sub.active {
+  opacity: 1;
+  transform: scale(1.12);
 }
 .chip-beats {
   display: flex;
