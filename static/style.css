@@ -86,6 +86,24 @@ html, body {
   margin-top: 1rem;
   letter-spacing: 0.05em;
 }
+.btn-secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 1rem 1.5rem;
+  margin-top: 0.75rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 600;
+  border-radius: var(--radius);
+  cursor: pointer;
+  min-height: 56px;
+}
+.btn-secondary:active { opacity: 0.8; }
 .upload-divider {
   display: flex;
   align-items: center;
@@ -128,6 +146,63 @@ html, body {
   min-height: 48px;
 }
 .btn-youtube:active { opacity: 0.8; }
+
+/* ── Écran Enregistrement (façon Shazam) ────────────────────────── */
+#screen-record {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem 1.5rem;
+  position: relative;
+}
+.record-cancel {
+  position: absolute;
+  top: calc(var(--safe-top) + 0.75rem);
+  right: 0.75rem;
+}
+.record-center { max-width: 320px; width: 100%; }
+.record-pulse-wrap {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.record-pulse-dot {
+  position: relative;
+  z-index: 1;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent2), var(--accent));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.2rem;
+}
+.record-pulse-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  opacity: 0;
+  animation: record-pulse 1.8s ease-out infinite;
+}
+.record-pulse-ring2 { animation-delay: 0.9s; }
+@keyframes record-pulse {
+  0%   { transform: scale(0.7); opacity: 0.6; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+.record-title { font-size: 1.2rem; font-weight: 600; margin-bottom: 0.4rem; }
+.record-timer {
+  font-size: 2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  margin-bottom: 1.75rem;
+}
 
 /* ── Écran Chargement ────────────────────────────────────────────── */
 #screen-loading {

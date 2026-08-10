@@ -149,14 +149,35 @@ def analyze():
         return jsonify({'error': 'Nom de fichier vide.'}), 400
 
     ext = os.path.splitext(f.filename)[1].lower()
-    if ext not in ('.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac'):
+    if ext not in ('.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac', '.webm', '.mp4'):
         return jsonify({'error': f'Format non supporté : {ext}'}), 400
 
     file_id = str(uuid.uuid4())
     filepath = os.path.join(UPLOAD_DIR, file_id + ext)
     f.save(filepath)
 
-    return _analyze_and_respond(filepath, file_id + ext)
+    # Le conteneur webm/mp4 produit par MediaRecorder (enregistrement micro
+    # côté navigateur) n'a pas de Cues/Duration finalisés : detect_chords()
+    # sait le lire (cf. _to_wav_if_needed dans chord_detector.py), mais
+    # Chrome refuse de le relire tel quel via une balise <audio src=...>
+    # servie en HTTP (reste bloqué à HAVE_NOTHING, testé et confirmé). On le
+    # convertit donc en wav dès l'upload, une bonne fois, pour l'analyse et
+    # pour la lecture qui sera servie ensuite par /api/audio.
+    if ext in ('.webm', '.mp4'):
+        wav_path = os.path.join(UPLOAD_DIR, file_id + '.wav')
+        result = subprocess.run(
+            ['ffmpeg', '-y', '-i', filepath, '-ar', '22050', '-ac', '1', wav_path],
+            capture_output=True, timeout=120,
+        )
+        os.unlink(filepath)
+        if result.returncode != 0:
+            return jsonify({'error': "Conversion de l'enregistrement échouée."}), 500
+        filepath = wav_path
+        file_id += '.wav'
+    else:
+        file_id += ext
+
+    return _analyze_and_respond(filepath, file_id)
 
 
 @app.route('/api/analyze-youtube', methods=['POST'])
@@ -266,13 +287,26 @@ def export_pdf():
     )
 
 
+# Le mimetypes.guess_type() par défaut de Python mappe .webm sur
+# "video/webm" (registre système, pas de piste vidéo dans nos
+# enregistrements) — certains navigateurs refusent de lire ça dans une
+# balise <audio>. Table explicite pour forcer un type audio/* correct.
+_AUDIO_MIMETYPES = {
+    '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.flac': 'audio/flac',
+    '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.aac': 'audio/aac',
+    '.webm': 'audio/webm', '.mp4': 'audio/mp4',
+}
+
+
 @app.route('/api/audio/<path:file_id>')
 def serve_audio(file_id):
     """Sert le fichier audio avec support Range (obligatoire pour iOS)."""
     filepath = os.path.join(UPLOAD_DIR, file_id)
     if not os.path.exists(filepath):
         return 'Fichier introuvable', 404
-    return send_file(filepath, conditional=True)
+    ext = os.path.splitext(file_id)[1].lower()
+    mimetype = _AUDIO_MIMETYPES.get(ext)
+    return send_file(filepath, conditional=True, mimetype=mimetype)
 
 
 @app.route('/api/separate', methods=['POST'])

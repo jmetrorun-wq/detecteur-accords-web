@@ -321,9 +321,11 @@ def _chroma_to_chord_segments(chroma: np.ndarray, duration: float) -> list[dict]
 
 
 def _to_wav_if_needed(filepath: str) -> tuple[str, bool]:
-    """Convertit m4a/aac en wav via ffmpeg si nécessaire. Retourne (chemin, converti)."""
+    """Convertit m4a/aac/webm/mp4 en wav via ffmpeg si nécessaire (webm/mp4 :
+    formats produits par l'enregistrement micro MediaRecorder du navigateur,
+    respectivement sur Chrome/Firefox et Safari/iOS). Retourne (chemin, converti)."""
     ext = os.path.splitext(filepath)[1].lower()
-    if ext not in ('.m4a', '.aac'):
+    if ext not in ('.m4a', '.aac', '.webm', '.mp4'):
         return filepath, False
     wav_path = filepath + '_tmp.wav'
     result = subprocess.run(

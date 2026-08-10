@@ -19,6 +19,7 @@ const state = {
 // ── DOM ────────────────────────────────────────────────────────────
 const screens = {
   upload:   document.getElementById('screen-upload'),
+  record:   document.getElementById('screen-record'),
   loading:  document.getElementById('screen-loading'),
   results:  document.getElementById('screen-results'),
 };
@@ -26,6 +27,10 @@ const fileInput       = document.getElementById('file-input');
 const youtubeForm     = document.getElementById('youtube-form');
 const youtubeUrlInput = document.getElementById('youtube-url');
 const loadingFilename = document.getElementById('loading-filename');
+const btnRecord       = document.getElementById('btn-record');
+const btnRecordStop   = document.getElementById('btn-record-stop');
+const btnRecordCancel = document.getElementById('btn-record-cancel');
+const recordTimerEl   = document.getElementById('record-timer');
 const infoKey         = document.getElementById('info-key');
 const infoTempo       = document.getElementById('info-tempo');
 const currentChord    = document.getElementById('current-chord');
@@ -154,6 +159,102 @@ youtubeForm.addEventListener('submit', (e) => {
     body: JSON.stringify({ url }),
   }));
 });
+
+// ── Enregistrement micro façon Shazam ──────────────────────────────
+// Capture un court extrait audio en direct (concert, radio, quelqu'un
+// qui joue à côté) pour lancer la même analyse d'accords que sur un
+// fichier uploadé, sans passer par un fichier ou un lien YouTube.
+const MAX_RECORD_S = 60; // arrêt auto : un extrait suffit à identifier les accords
+
+// Ordre de préférence des formats : webm/opus (Chrome/Firefox) d'abord,
+// mp4/aac (seul format supporté par MediaRecorder sur Safari/iOS) en
+// repli — filtré par isTypeSupported, donc chaque navigateur retombe
+// naturellement sur le premier format qu'il sait produire.
+const RECORD_MIME_CANDIDATES = [
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/mp4',
+  'audio/ogg;codecs=opus',
+];
+
+function pickRecordMime() {
+  if (!window.MediaRecorder) return null;
+  return RECORD_MIME_CANDIDATES.find(m => MediaRecorder.isTypeSupported(m)) || null;
+}
+
+const recordSupported = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
+if (!recordSupported) {
+  btnRecord.classList.add('hidden');
+}
+
+let mediaRecorder    = null;
+let recordStream     = null;
+let recordChunks     = [];
+let recordStartMs    = 0;
+let recordTimerId    = null;
+let recordCancelled  = false;
+
+btnRecord.addEventListener('click', startRecording);
+btnRecordStop.addEventListener('click', () => { recordCancelled = false; stopRecording(); });
+btnRecordCancel.addEventListener('click', () => { recordCancelled = true; stopRecording(); showScreen('upload'); });
+
+async function startRecording() {
+  const mimeType = pickRecordMime();
+  try {
+    recordStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    alert(`Impossible d'accéder au microphone : ${err.message}`);
+    return;
+  }
+  recordChunks = [];
+  recordCancelled = false;
+  mediaRecorder = new MediaRecorder(recordStream, mimeType ? { mimeType } : undefined);
+  mediaRecorder.addEventListener('dataavailable', (e) => {
+    if (e.data.size > 0) recordChunks.push(e.data);
+  });
+  mediaRecorder.addEventListener('stop', onRecordStop);
+  mediaRecorder.start();
+
+  recordStartMs = Date.now();
+  updateRecordTimer();
+  recordTimerId = setInterval(updateRecordTimer, 250);
+  showScreen('record');
+}
+
+function updateRecordTimer() {
+  const elapsed = (Date.now() - recordStartMs) / 1000;
+  recordTimerEl.textContent = fmtTime(elapsed);
+  if (elapsed >= MAX_RECORD_S) stopRecording();
+}
+
+function stopRecording() {
+  if (recordTimerId !== null) {
+    clearInterval(recordTimerId);
+    recordTimerId = null;
+  }
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  if (recordStream) {
+    recordStream.getTracks().forEach(t => t.stop());
+    recordStream = null;
+  }
+}
+
+function onRecordStop() {
+  const chunks = recordChunks;
+  recordChunks = [];
+  if (recordCancelled || !chunks.length) return;
+
+  const mimeType = mediaRecorder.mimeType || 'audio/webm';
+  const ext = mimeType.includes('mp4') ? '.mp4'
+    : mimeType.includes('ogg') ? '.ogg'
+    : '.webm';
+  const blob = new Blob(chunks, { type: mimeType });
+  const file = new File([blob], `enregistrement${ext}`, { type: mimeType });
+
+  loadingFilename.textContent = 'Enregistrement micro';
+  showScreen('loading');
+  uploadAndAnalyze(file);
+}
 
 function applyResults(data) {
   state.chords      = data.chords;
