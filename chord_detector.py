@@ -247,7 +247,15 @@ def detect_beats(y: np.ndarray, sr: int) -> list[float]:
     """
     sig = Signal(y.astype(np.float32), sample_rate=sr, num_channels=1)
     activations = RNNBeatProcessor()(sig)
-    beats = DBNBeatTrackingProcessor(fps=100)(activations)
+    # Bande de tempo resserrée à 70-140 BPM pour lever l'ambiguïté
+    # d'octave du DBN : avec les bornes par défaut (55-215) il se cale
+    # souvent sur la pulsation en croches (mesuré 154 BPM sur un morceau
+    # à 78) ; dès que max_bpm atteint ~150 il rebascule sur ce
+    # double-temps. 70-140 couvre la quasi-totalité du répertoire visé
+    # (pop/rock/folk/gospel) — une chanson réellement > 140 sera suivie
+    # en demi-temps, ce qui reste une grille d'accords cohérente ;
+    # < 70 est traité comme un tempo à ressenti « demi-temps » et doublé.
+    beats = DBNBeatTrackingProcessor(fps=100, min_bpm=70, max_bpm=140)(activations)
     return [float(t) for t in beats]
 
 
