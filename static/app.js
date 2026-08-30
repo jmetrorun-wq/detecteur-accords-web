@@ -382,11 +382,19 @@ function renderBeatStrip() {
     frag.appendChild(el);
   });
   chordListEl.appendChild(frag);
-  // Géométrie mise en cache (cases toutes de même largeur) pour le
-  // défilement continu, qui tourne à chaque frame.
+  measureStripGeometry();
+}
+
+// Géométrie mise en cache (cases toutes de même largeur, box-sizing
+// border-box) pour le défilement continu qui tourne à chaque frame.
+// stripPad = padding-gauche résolu (46vw) : offset AVANT la 1re case,
+// dans le repère de défilement de .chord-list. Ne PAS utiliser
+// firstCell.offsetLeft (repère de l'offsetParent, pas de .chord-list →
+// décalage d'environ une case).
+function measureStripGeometry() {
   const first = chordListEl.firstElementChild;
-  state.cellW = first ? first.offsetWidth : 62;
-  state.stripPad = first ? first.offsetLeft : 0;
+  state.cellW = first ? first.getBoundingClientRect().width : 0;
+  state.stripPad = parseFloat(getComputedStyle(chordListEl).paddingLeft) || 0;
 }
 
 // Met à jour le gros accord / piano / guitare (segments réels, précis —
@@ -440,20 +448,19 @@ function updateBeatStripAt(time) {
   }
 
   // Géométrie : peut être nulle si mesurée pendant que l'écran était
-  // caché (offsetWidth = 0) — on remesure ici, où l'écran est visible.
-  if (!state.cellW) {
-    const f = chordListEl.firstElementChild;
-    if (f && f.offsetWidth) { state.cellW = f.offsetWidth; state.stripPad = f.offsetLeft; }
-  }
+  // caché (getBoundingClientRect = 0) — on remesure ici, écran visible.
+  if (!state.cellW) measureStripGeometry();
   if (!state.cellW) return;
 
-  // Défilement continu : x du point de lecture = padding + (index de
-  // case + fraction écoulée dans la case) × largeur de case.
+  // Défilement continu : x du point de lecture dans la bande =
+  // padding-gauche + (index de case + fraction écoulée) × largeur de
+  // case ; on le place exactement au centre du cadre (comme le gros
+  // accord, qui lui est bien calé).
   const cell = cells[idx];
   const span = Math.max(0.001, cell.end - cell.start);
   const frac = Math.max(0, Math.min(1, (time - cell.start) / span));
   const playX = state.stripPad + (idx + frac) * state.cellW;
-  chordListEl.scrollLeft = playX - chordListEl.clientWidth / 2 + state.cellW / 2;
+  chordListEl.scrollLeft = playX - chordListEl.clientWidth / 2;
 }
 
 function updateAt(time) {
