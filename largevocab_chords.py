@@ -47,6 +47,16 @@ _QUALITY_MAP = {
 
 MIN_CHORD_DUR = 0.6  # s ; segments plus courts fusionnés au précédent (cf. chord_detector)
 
+# Le décodage HMM (Viterbi) du modèle retarde légèrement les changements
+# d'accord : il attend d'avoir accumulé assez de vraisemblance pour le
+# nouvel accord avant de basculer (pénalité de transition). Retour
+# utilisateur : ~0,25 s de retard perçu sur de la vraie musique (le clip
+# synthétique, lui, tombe quasi pile — le retard vient des transitoires/
+# réverb d'un vrai enregistrement). On avance donc toutes les frontières
+# de LEAD_COMPENSATION_S. À ajuster si le retour évolue ; trop élevé =
+# les accords rapides arrivent en avance.
+LEAD_COMPENSATION_S = 0.25
+
 
 def translate_label(lab: str) -> str:
     """`'Eb:min7'` → `'D#m7'`, `'C:maj/5'` → `'C'`, `'N'`/`'X'` → `'N'`."""
@@ -81,6 +91,9 @@ def _parse_lab(lab_path: str, duration: float) -> list[dict]:
             if len(parts) != 3:
                 continue
             start, end, label = float(parts[0]), float(parts[1]), parts[2]
+            # Avance de compensation du retard HMM, bornée à [0, duration].
+            start = min(max(start - LEAD_COMPENSATION_S, 0.0), duration)
+            end = min(max(end - LEAD_COMPENSATION_S, 0.0), duration)
             raw.append((start, end, translate_label(label)))
     if not raw:
         return []
