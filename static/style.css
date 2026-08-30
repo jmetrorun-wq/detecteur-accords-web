@@ -389,76 +389,53 @@ html, body {
   cursor: pointer;
 }
 
-/* Barre d'accords défilante */
+/* Barre défilante — une case par temps, façon Chordify (nom d'accord
+   affiché seulement quand il change, case vide = accord tenu ; barre de
+   mesure au début de chaque mesure). */
 .chord-list {
-  padding: 0.5rem 42vw 1rem;
+  padding: 0.6rem 46vw;
   display: flex;
   flex-wrap: nowrap;
-  gap: 0.4rem;
+  gap: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  background: var(--surface);
 }
 .chord-list::-webkit-scrollbar {
   display: none;
 }
-.measure-chip {
+.beat-cell {
+  flex: 0 0 auto;
+  width: 62px;
+  height: 46px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  flex-shrink: 0;
-  padding: 0.4rem 0.6rem;
-  border-radius: 8px;
+  padding-left: 10px;
+  border-right: 1px solid var(--border);
+  border-radius: 3px;
   cursor: pointer;
-  border: 2px solid transparent;
-  min-width: 56px;
-  transition: border-color 0.1s;
-  background: var(--surface2);
 }
-.measure-chip.active {
-  border-color: var(--accent);
+.beat-cell.bar-start {
+  border-left: 2px solid var(--text);
+  padding-left: 9px;
 }
-.chip-name {
-  font-size: 1rem;
-  font-weight: 700;
+.beat-cell.active {
+  background: var(--accent);
+  border-right-color: transparent;
+  border-radius: 8px;
 }
-.chip-names-multi {
-  display: flex;
-  align-items: baseline;
-  gap: 0.3rem;
-  max-width: 140px;
+.beat-cell.active.bar-start {
+  border-left-color: var(--accent);
 }
-.chip-name-sub {
-  font-size: 0.72rem;
+.beat-cell-name {
+  font-size: 1.15rem;
   font-weight: 700;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  opacity: 0.4;
-  transition: opacity 0.15s, transform 0.15s;
 }
-.chip-name-sub.active {
-  opacity: 1;
-  transform: scale(1.12);
-}
-.chip-beats {
-  display: flex;
-  gap: 4px;
-  margin-top: 0.35rem;
-}
-.beat-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-dim);
-  opacity: 0.4;
-}
-.beat-dot.on {
-  background: var(--accent);
-  opacity: 1;
-  transform: scale(1.4);
+.beat-cell.active .beat-cell-name {
+  color: var(--bg) !important;
 }
 
 /* ── Séparation de pistes ───────────────────────────────────────── */

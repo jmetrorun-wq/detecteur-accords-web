@@ -11,10 +11,8 @@ const state = {
   fileId:    null,
   transpose: 0,
   activeIdx: -1,       // index de l'accord en cours (segment précis)
-  measures:  [],       // [{start, end, chord, color}, ...] une par mesure
-  activeMeasureIdx: -1,
-  activeBeat: -1,      // 0-3, temps en cours dans la mesure active
-  activeSegIdx: -1,    // index de l'accord actif au sein d'une mesure multi-accords
+  beatCells: [],      // [{start, end, chord, color, showName, barStart}, ...] une par temps
+  activeCellIdx: -1,
 };
 
 // ── DOM ────────────────────────────────────────────────────────────
@@ -288,9 +286,9 @@ function applyResults(data) {
   btnPlay.textContent = '▶';
 
   renderHeader();
-  renderMeasures();
   resetSeparatePanel();
-  showScreen('results');
+  showScreen('results');   // visible d'abord : renderBeatStrip mesure la géométrie des cases
+  renderBeatStrip();
   updateAt(0);
 }
 
@@ -319,67 +317,76 @@ function currentChords() {
   }));
 }
 
-// Convertit la liste d'accords (segments à durée variable) en une case
-// par mesure, sur la grille de mesures réelle détectée côté serveur
-// (state.barTimes — cf. detect_meter/chords_to_bar_tokens côté Python)
-// — pour un défilement façon Chordify (mesures de taille uniforme au
-// sein d'un même morceau, un point par temps). Une mesure garde TOUS les
-// accords qui la traversent (pas un seul pris au milieu) : sinon un
-// changement d'accord en cours de mesure disparaissait silencieusement.
-function computeMeasures() {
+// Découpe le morceau en cases d'UN temps chacune (façon Chordify), sur
+// la grille de mesures détectée côté serveur (state.barTimes), chaque
+// mesure subdivisée en state.beatsPerBar temps égaux. Chaque case porte
+// l'accord en cours à son début ; on n'affiche son nom que quand il
+// change (case vide = accord tenu). La 1re case d'une mesure porte une
+// barre de mesure.
+function computeBeatCells() {
   const chords = currentChords();
   const barTimes = state.barTimes;
   if (!chords.length || !barTimes.length) return [];
-  const measures = [];
-  let ci = 0;
+
+  const chordAt = (t) => {
+    for (let i = 0; i < chords.length; i++) {
+      if (t >= chords[i].time && t < chords[i].end) return chords[i];
+    }
+    return t < chords[0].time ? chords[0] : chords[chords.length - 1];
+  };
+
+  const cells = [];
+  let prevChord = null;
   for (let b = 0; b < barTimes.length; b++) {
-    const t0 = barTimes[b];
-    const t1 = b + 1 < barTimes.length ? barTimes[b + 1] : state.duration;
-    while (ci + 1 < chords.length && chords[ci].end <= t0) ci++;
-    const segments = [];
-    for (let j = ci; j < chords.length && chords[j].time < t1; j++) {
-      const segStart = Math.max(t0, chords[j].time);
-      const segEnd = Math.min(t1, chords[j].end);
-      if (segEnd > segStart) {
-        segments.push({ start: segStart, end: segEnd, chord: chords[j].chord, color: chords[j].color });
-      }
+    const barStart = barTimes[b];
+    const barEnd = b + 1 < barTimes.length ? barTimes[b + 1] : state.duration;
+    const beatDur = Math.max(0.001, (barEnd - barStart) / state.beatsPerBar);
+    for (let k = 0; k < state.beatsPerBar; k++) {
+      const start = barStart + k * beatDur;
+      if (start >= state.duration) break;
+      const end = Math.min(start + beatDur, state.duration);
+      const c = chordAt(start);
+      cells.push({
+        start, end,
+        chord: c.chord,
+        color: c.color,
+        showName: c.chord !== prevChord,
+        barStart: k === 0,
+      });
+      prevChord = c.chord;
     }
-    if (!segments.length) {
-      segments.push({ start: t0, end: t1, chord: chords[ci].chord, color: chords[ci].color });
-    }
-    measures.push({ start: t0, end: t1, segments });
   }
-  return measures;
+  return cells;
 }
 
-function renderMeasures() {
+function renderBeatStrip() {
   chordListEl.innerHTML = '';
-  state.measures = computeMeasures();
-  state.activeMeasureIdx = -1;
-  state.activeBeat = -1;
-  state.activeSegIdx = -1;
-  const beatDots = Array.from(
-    { length: state.beatsPerBar },
-    (_, i) => `<span class="beat-dot" data-beat="${i}"></span>`,
-  ).join('');
-  state.measures.forEach((m, idx) => {
-    const chip = document.createElement('div');
-    chip.className = 'measure-chip';
-    chip.dataset.idx = idx;
-    const barDur = Math.max(0.001, m.end - m.start);
-    const namesHtml = m.segments.length === 1
-      ? `<span class="chip-name" style="color:${m.segments[0].color}">${m.segments[0].chord === 'N' ? '–' : m.segments[0].chord}</span>`
-      : `<span class="chip-names-multi">${m.segments.map(s => `<span class="chip-name-sub" style="color:${s.color}; flex-grow:${Math.max(0.2, (s.end - s.start) / barDur)}">${s.chord === 'N' ? '–' : s.chord}</span>`).join('')}</span>`;
-    chip.innerHTML = `
-      ${namesHtml}
-      <span class="chip-beats">${beatDots}</span>
-    `;
-    chip.addEventListener('click', () => {
-      audioEl.currentTime = m.start + 0.05;
+  state.beatCells = computeBeatCells();
+  state.activeCellIdx = -1;
+  const frag = document.createDocumentFragment();
+  state.beatCells.forEach((cell, idx) => {
+    const el = document.createElement('div');
+    el.className = 'beat-cell' + (cell.barStart ? ' bar-start' : '');
+    el.dataset.idx = idx;
+    if (cell.showName && cell.chord !== 'N') {
+      const span = document.createElement('span');
+      span.className = 'beat-cell-name';
+      span.style.color = cell.color;
+      span.textContent = cell.chord;
+      el.appendChild(span);
+    }
+    el.addEventListener('click', () => {
+      audioEl.currentTime = cell.start + 0.03;
       if (audioEl.paused) audioEl.play().catch(() => {});
     });
-    chordListEl.appendChild(chip);
+    frag.appendChild(el);
   });
+  chordListEl.appendChild(frag);
+  // Géométrie mise en cache (cases toutes de même largeur) pour le
+  // défilement continu, qui tourne à chaque frame.
+  const first = chordListEl.firstElementChild;
+  state.cellW = first ? first.offsetWidth : 62;
+  state.stripPad = first ? first.offsetLeft : 0;
 }
 
 // Met à jour le gros accord / piano / guitare (segments réels, précis —
@@ -409,73 +416,49 @@ function updateChordAt(time) {
   drawGuitar(guitarSvg, guitarLabel, chordName !== '—' ? chordName : null);
 }
 
-// Met à jour la case de mesure active et le point de temps (un seul
-// point allumé à la fois = le temps en cours, façon métronome).
-function updateMeasureAt(time) {
-  const measures = state.measures;
-  const barTimes = state.barTimes;
-  if (!measures.length || !barTimes.length) return;
+// Barre défilante : surligne la case du temps en cours et fait glisser
+// la bande pour garder la lecture centrée. Le défilement est piloté
+// image par image (position interpolée dans la case) plutôt que par
+// scrollInto+scroll-behavior:smooth — ce dernier est silencieusement
+// inopérant dans certains contextes (WebView, onglet en arrière-plan).
+function updateBeatStripAt(time) {
+  const cells = state.beatCells;
+  if (!cells.length) return;
 
-  // barTimes n'est pas forcément uniforme (calé sur les mesures
-  // réellement détectées) : on cherche la dernière mesure commencée.
-  let idx = barTimes.length - 1;
-  for (let i = 0; i < barTimes.length; i++) {
-    if (barTimes[i] > time) { idx = Math.max(0, i - 1); break; }
+  let idx = cells.length - 1;
+  for (let i = 0; i < cells.length; i++) {
+    if (time < cells[i].end) { idx = i; break; }
   }
-  const barStart = barTimes[idx];
-  const barEnd = idx + 1 < barTimes.length ? barTimes[idx + 1] : state.duration;
-  const barDur = Math.max(0.001, barEnd - barStart);
-  const beat = Math.max(0, Math.min(
-    state.beatsPerBar - 1,
-    Math.floor(((time - barStart) / barDur) * state.beatsPerBar),
-  ));
+  if (idx < 0) idx = 0;
 
-  if (idx !== state.activeMeasureIdx) {
-    document.querySelectorAll('.measure-chip').forEach(el => {
-      el.classList.toggle('active', Number(el.dataset.idx) === idx);
-    });
-    const chip = chordListEl.querySelector(`[data-idx="${idx}"]`);
-    if (chip) chip.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
-    state.activeMeasureIdx = idx;
-    state.activeBeat = -1;
-    state.activeSegIdx = -1;
+  if (idx !== state.activeCellIdx) {
+    const prev = chordListEl.querySelector('.beat-cell.active');
+    if (prev) prev.classList.remove('active');
+    const cur = chordListEl.querySelector(`.beat-cell[data-idx="${idx}"]`);
+    if (cur) cur.classList.add('active');
+    state.activeCellIdx = idx;
   }
 
-  if (beat !== state.activeBeat) {
-    const chip = chordListEl.querySelector(`[data-idx="${idx}"]`);
-    if (chip) {
-      chip.querySelectorAll('.beat-dot').forEach(dot => {
-        dot.classList.toggle('on', Number(dot.dataset.beat) === beat);
-      });
-    }
-    state.activeBeat = beat;
+  // Géométrie : peut être nulle si mesurée pendant que l'écran était
+  // caché (offsetWidth = 0) — on remesure ici, où l'écran est visible.
+  if (!state.cellW) {
+    const f = chordListEl.firstElementChild;
+    if (f && f.offsetWidth) { state.cellW = f.offsetWidth; state.stripPad = f.offsetLeft; }
   }
+  if (!state.cellW) return;
 
-  // Accord précis en cours au sein de la mesure active. Une mesure à
-  // plusieurs accords (harmonie qui change plus vite que la mesure, cas
-  // fréquent) ne montrait jusqu'ici aucun changement visuel avant la
-  // mesure suivante — seule la bordure de la case entière réagissait.
-  const segs = measures[idx].segments;
-  if (segs.length > 1) {
-    let segIdx = segs.length - 1;
-    for (let i = 0; i < segs.length; i++) {
-      if (time < segs[i].end) { segIdx = i; break; }
-    }
-    if (segIdx !== state.activeSegIdx) {
-      const chip = chordListEl.querySelector(`[data-idx="${idx}"]`);
-      if (chip) {
-        chip.querySelectorAll('.chip-name-sub').forEach((el, i) => {
-          el.classList.toggle('active', i === segIdx);
-        });
-      }
-      state.activeSegIdx = segIdx;
-    }
-  }
+  // Défilement continu : x du point de lecture = padding + (index de
+  // case + fraction écoulée dans la case) × largeur de case.
+  const cell = cells[idx];
+  const span = Math.max(0.001, cell.end - cell.start);
+  const frac = Math.max(0, Math.min(1, (time - cell.start) / span));
+  const playX = state.stripPad + (idx + frac) * state.cellW;
+  chordListEl.scrollLeft = playX - chordListEl.clientWidth / 2 + state.cellW / 2;
 }
 
 function updateAt(time) {
   updateChordAt(time);
-  updateMeasureAt(time);
+  updateBeatStripAt(time);
 }
 
 // ── Lecteur audio ──────────────────────────────────────────────────
@@ -541,7 +524,7 @@ btnTrUp.addEventListener('click',   () => setTranspose(state.transpose + 1));
 function setTranspose(n) {
   state.transpose = Math.max(-11, Math.min(11, n));
   renderHeader();
-  renderMeasures();
+  renderBeatStrip();
   state.activeIdx = -2; // force refresh
   updateAt(audioEl.currentTime);
 }
@@ -692,7 +675,9 @@ window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     if (screens.results.classList.contains('active')) {
+      state.cellW = 0;  // la largeur de case (et le padding 46vw) dépend de la largeur d'écran
       updateChordAt(audioEl.currentTime);
+      updateBeatStripAt(audioEl.currentTime);
     }
   }, 150);
 });
