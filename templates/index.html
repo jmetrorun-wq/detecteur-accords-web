@@ -10,7 +10,7 @@
   <link rel="manifest" href="/static/manifest.json">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
   <title>ChordSplit</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
 
@@ -157,8 +157,8 @@
 
 <audio id="audio-player" preload="none"></audio>
 
-<script src="/static/piano.js"></script>
-<script src="/static/guitar.js"></script>
-<script src="/static/app.js"></script>
+<script src="/static/piano.js?v={{ asset_version }}"></script>
+<script src="/static/guitar.js?v={{ asset_version }}"></script>
+<script src="/static/app.js?v={{ asset_version }}"></script>
 </body>
 </html>

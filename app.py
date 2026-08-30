@@ -11,11 +11,37 @@ import time
 from typing import Optional
 
 import yt_dlp
-from flask import Flask, request, jsonify, send_file, render_template
+from flask import Flask, request, jsonify, send_file, render_template, make_response
 from chord_detector import detect_chords, detect_structure, chord_color, chord_type_name
 from pdf_export import build_chord_chart_pdf
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
+
+
+# Versionnage des assets : ?v=<version> sur les <script>/<link> du
+# template, recalculé au démarrage à partir de la date de modif des
+# fichiers statiques. iOS Safari (surtout en PWA « écran d'accueil »)
+# garde app.js/style.css en cache très longtemps malgré Cache-Control:
+# no-cache — sans ce paramètre, un déploiement ne se voit pas côté client.
+_STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
+
+
+def _asset_version() -> str:
+    try:
+        return str(int(max(
+            os.path.getmtime(os.path.join(_STATIC_DIR, f))
+            for f in ('app.js', 'style.css', 'piano.js', 'guitar.js')
+        )))
+    except OSError:
+        return '0'
+
+
+ASSET_VERSION = _asset_version()
+
+
+@app.context_processor
+def _inject_asset_version():
+    return {'asset_version': ASSET_VERSION}
 
 # ── Stockage temporaire des fichiers uploadés ─────────────────────────
 UPLOAD_DIR = os.path.join(tempfile.gettempdir(), 'chordweb')
@@ -76,7 +102,12 @@ threading.Thread(target=_cleanup_old_files, daemon=True).start()
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    # Jamais mis en cache : le HTML porte le ?v= des assets, il doit
+    # toujours être rechargé pour qu'un déploiement se voie (iOS Safari /
+    # PWA cachent sinon la page indéfiniment).
+    resp = make_response(render_template('index.html'))
+    resp.headers['Cache-Control'] = 'no-store, must-revalidate'
+    return resp
 
 
 def _analyze_and_respond(filepath: str, file_id: str, extra: Optional[dict] = None):

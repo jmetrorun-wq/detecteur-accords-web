@@ -399,7 +399,7 @@ html, body {
   gap: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
   scrollbar-width: none;
   background: var(--surface);
 }
