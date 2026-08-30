@@ -100,6 +100,27 @@ threading.Thread(target=_cleanup_old_files, daemon=True).start()
 
 # ── Routes ────────────────────────────────────────────────────────────
 
+# Digital Asset Links : autorise l'appli Android TWA (paquet
+# fr.chordsplit.app, générée par Bubblewrap, cf. ~/.local/bin/
+# chordsplit-android/) à s'ouvrir en plein écran sur ce domaine, sans
+# barre d'URL. L'empreinte est celle du keystore android.keystore.
+_ASSETLINKS = [{
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+        "namespace": "android_app",
+        "package_name": "fr.chordsplit.app",
+        "sha256_cert_fingerprints": [
+            "8B:85:5F:74:03:76:E4:AB:CA:29:CC:EA:69:D0:7A:CA:04:DD:04:36:81:ED:76:80:40:62:53:2F:8E:65:20:71"
+        ],
+    },
+}]
+
+
+@app.route('/.well-known/assetlinks.json')
+def assetlinks():
+    return jsonify(_ASSETLINKS)
+
+
 @app.route('/')
 def index():
     # Jamais mis en cache : le HTML porte le ?v= des assets, il doit
