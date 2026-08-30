@@ -34,6 +34,21 @@ RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pyt
 # pour ne pas payer ce téléchargement au premier vrai cold start.
 RUN python -c "from demucs.pretrained import get_model; get_model('htdemucs')"
 
+# Détection d'accords à grand vocabulaire (modèle ISMIR 2019 vendoré dans
+# chordnet_ismir/, cf. largevocab_chords.py). Gardé par
+# ENABLE_LARGEVOCAB_CHORDS, jamais dans requirements.txt/Render (torch).
+# Poids inclus dans le repo (chordnet_ismir/cache_data/*.sdict, ~27 Mo),
+# rien à pré-télécharger. Deps manquantes (torch déjà installé ci-dessus) :
+#  - pretty_midi + h5py : importées par le mini-framework `mir` du modèle
+#  - pydub : importée par son data_file.py
+#  - numba + llvmlite : le sous-processus chord_recognition.py utilise
+#    librosa.hybrid_cqt, qui s'appuie sur des noyaux numba (@guvectorize/
+#    @stencil) que le stub `/app/numba` du projet casse. largevocab_chords.py
+#    lance ce sous-processus SANS PYTHONPATH ni NUMBA_DISABLE_JIT pour qu'il
+#    prenne le vrai numba installé ici (roues manylinux, pas de build LLVM).
+#    Le process principal (madmom) garde le stub, il ne voit jamais celui-ci.
+RUN pip install --no-cache-dir pretty_midi h5py pydub numba llvmlite
+
 RUN curl -sL -o bgutil-pot \
     https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs/releases/download/v0.8.1/bgutil-pot-linux-x86_64 \
     && chmod +x bgutil-pot
@@ -43,4 +58,7 @@ ENV PYTHONPATH=/app
 
 EXPOSE 8080
 
-CMD ["bash", "-c", "./bgutil-pot server --host 127.0.0.1 --port 4416 & exec gunicorn app:app --bind 0.0.0.0:${PORT:-8080} --workers 1 --timeout 180"]
+# --timeout 300 (aligné sur le --timeout=300 de Cloud Run) : l'analyse
+# synchrone /api/analyze peut désormais inclure une passe du modèle
+# d'accords ISMIR sur CPU (ensemble de 5, ~30-90 s selon la durée).
+CMD ["bash", "-c", "./bgutil-pot server --host 127.0.0.1 --port 4416 & exec gunicorn app:app --bind 0.0.0.0:${PORT:-8080} --workers 1 --timeout 300"]

@@ -23,7 +23,7 @@ steps:
       - --allow-unauthenticated
       - --no-cpu-throttling
       - --max-instances=1
-      - --set-env-vars=ENABLE_METER_DETECTION=1,ENABLE_STEM_SEPARATION=1
+      - --set-env-vars=ENABLE_METER_DETECTION=1,ENABLE_STEM_SEPARATION=1,ENABLE_LARGEVOCAB_CHORDS=1
 
 images:
   - europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/detecteur-accords-web:$COMMIT_SHA

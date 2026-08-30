@@ -355,6 +355,11 @@ def detect_chords(
     mesures sont détectées séparément par detect_meter (cf. sa
     docstring pour les limites connues).
 
+    Si ENABLE_LARGEVOCAB_CHORDS est défini (Cloud Run seulement), les
+    accords viennent à la place du modèle ISMIR 2019 à grand vocabulaire
+    (cf. largevocab_chords.py) ; repli automatique sur le décodage par
+    gabarits en cas d'échec.
+
     Retourne : (chords, duration, key_en, key_fr, tempo_bpm, beats_per_bar, bar_times)
     """
     def cb(v: int) -> None:
@@ -397,7 +402,21 @@ def detect_chords(
         key_en, key_fr = detect_key(chroma.T)
         cb(88)
 
-        chords = _chroma_to_chord_segments(chroma, duration)
+        if os.environ.get('ENABLE_LARGEVOCAB_CHORDS'):
+            # Modèle ISMIR 2019 à grand vocabulaire (torch, sous-processus)
+            # — installé uniquement dans le Dockerfile / Cloud Run, comme
+            # ENABLE_METER_DETECTION. Repli sur le décodage par gabarits
+            # (chroma CNN) si le sous-processus échoue.
+            try:
+                from largevocab_chords import detect as _largevocab_detect
+                chords = _largevocab_detect(load_path, duration)
+                if not chords:
+                    raise ValueError('aucun accord renvoyé par le modèle')
+            except Exception as exc:
+                print(f'largevocab_chords a échoué ({exc!r}), repli sur le décodage par gabarits')
+                chords = _chroma_to_chord_segments(chroma, duration)
+        else:
+            chords = _chroma_to_chord_segments(chroma, duration)
         cb(95)
     finally:
         if converted:
