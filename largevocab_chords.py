@@ -24,9 +24,11 @@ l'accord de septième le plus proche, la basse d'un renversement est
 ignorée). C'est une perte assumée : le gain reste net face au décodage
 par gabarits sur chroma CNN, incapable de distinguer maj7 de maj.
 """
+import json
 import os
 import subprocess
 import sys
+import tempfile
 
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'chordnet_ismir')
 
@@ -47,15 +49,13 @@ _QUALITY_MAP = {
 
 MIN_CHORD_DUR = 0.6  # s ; segments plus courts fusionnés au précédent (cf. chord_detector)
 
-# Le décodage HMM (Viterbi) du modèle retarde légèrement les changements
-# d'accord : il attend d'avoir accumulé assez de vraisemblance pour le
-# nouvel accord avant de basculer (pénalité de transition). Retour
-# utilisateur : ~0,25 s de retard perçu sur de la vraie musique (le clip
-# synthétique, lui, tombe quasi pile — le retard vient des transitoires/
-# réverb d'un vrai enregistrement). On avance donc toutes les frontières
-# de LEAD_COMPENSATION_S. À ajuster si le retour évolue ; trop élevé =
-# les accords rapides arrivent en avance.
-LEAD_COMPENSATION_S = 0.25
+# Le retard perçu des accords sur l'audio est traité de deux façons :
+#  - transitions calées sur les temps (paramètre `beats` de detect ci-dessous),
+#    qui supprime le « le HMM attend d'avoir assez d'évidence » ;
+#  - une anticipation globale côté frontend (SYNC_LEAD_S dans static/app.js),
+#    qui compense le retard constant de audio.currentTime sur la sortie
+#    audio réelle (surtout iOS) et touche AUSSI la barre de mesures.
+# Plus de décalage temporel appliqué ici.
 
 
 def translate_label(lab: str) -> str:
@@ -91,9 +91,6 @@ def _parse_lab(lab_path: str, duration: float) -> list[dict]:
             if len(parts) != 3:
                 continue
             start, end, label = float(parts[0]), float(parts[1]), parts[2]
-            # Avance de compensation du retard HMM, bornée à [0, duration].
-            start = min(max(start - LEAD_COMPENSATION_S, 0.0), duration)
-            end = min(max(end - LEAD_COMPENSATION_S, 0.0), duration)
             raw.append((start, end, translate_label(label)))
     if not raw:
         return []
@@ -121,16 +118,28 @@ def _parse_lab(lab_path: str, duration: float) -> list[dict]:
     return cleaned
 
 
-def detect(audio_path: str, duration: float, timeout: int = 180) -> list[dict]:
+def detect(audio_path: str, duration: float, timeout: int = 240,
+           beats: list[float] | None = None) -> list[dict]:
     """Lance le modèle sur `audio_path` en sous-processus et renvoie les
     segments d'accords `[{'time','end','chord'}]` dans le vocabulaire
     ChordSplit. Lève une exception (à charge de l'appelant de retomber
     sur le décodage par gabarits) en cas d'échec ou de sortie vide.
 
-    timeout borné à 180 s (< le --timeout 300 de gunicorn/Cloud Run) pour
-    laisser le repli par gabarits + la structure + la réponse tenir dans
-    le budget requête même sur un morceau long où le modèle traîne."""
+    `beats` : temps (secondes) du morceau (cf. chord_detector.detect_beats).
+    Si fourni, les transitions d'accord du décodage HMM sont calées sur
+    ces temps (supprime le retard « le HMM attend d'avoir assez
+    d'évidence » sur de la vraie musique).
+
+    timeout borné à 240 s (< le --timeout 600 de gunicorn/Cloud Run, qui
+    doit aussi absorber chroma + detect_meter + detect_beats en amont)
+    pour laisser le repli par gabarits + la structure + la réponse tenir
+    dans le budget requête même sur un morceau long où le modèle traîne."""
     lab_path = audio_path + '.largevocab.lab'
+    beats_path = None
+    if beats:
+        fd, beats_path = tempfile.mkstemp(suffix='.beats.json', dir=os.path.dirname(audio_path))
+        with os.fdopen(fd, 'w') as f:
+            json.dump([float(t) for t in beats], f)
     # Le sous-processus doit voir le VRAI numba (llvmlite JIT), pas le stub
     # `/app/numba` du projet : librosa >= 0.10 s'appuie sur des noyaux
     # numba (@guvectorize/@stencil) dans tout le chemin CQT, que le stub
@@ -140,10 +149,12 @@ def detect(audio_path: str, duration: float, timeout: int = 180) -> list[dict]:
     # (gunicorn/madmom) garde stub + NUMBA_DISABLE_JIT, inchangé.
     env = {k: v for k, v in os.environ.items()
            if k not in ('PYTHONPATH', 'NUMBA_DISABLE_JIT')}
+    cmd = [sys.executable, 'chord_recognition.py', audio_path, lab_path]
+    if beats_path:
+        cmd += ['submission', beats_path]
     try:
         proc = subprocess.run(
-            [sys.executable, 'chord_recognition.py', audio_path, lab_path],
-            cwd=MODEL_DIR, env=env,
+            cmd, cwd=MODEL_DIR, env=env,
             capture_output=True, text=True, timeout=timeout,
         )
         if proc.returncode != 0:
@@ -155,7 +166,9 @@ def detect(audio_path: str, duration: float, timeout: int = 180) -> list[dict]:
             raise RuntimeError('aucun fichier .lab produit')
         return _parse_lab(lab_path, duration)
     finally:
-        try:
-            os.unlink(lab_path)
-        except OSError:
-            pass
+        for p in (lab_path, beats_path):
+            if p:
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass

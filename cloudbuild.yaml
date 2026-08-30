@@ -19,7 +19,7 @@ steps:
       - --region=europe-west1
       - --memory=6Gi
       - --cpu=2
-      - --timeout=300
+      - --timeout=600
       - --allow-unauthenticated
       - --no-cpu-throttling
       - --max-instances=1

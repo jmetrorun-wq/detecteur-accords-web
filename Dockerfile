@@ -58,7 +58,9 @@ ENV PYTHONPATH=/app
 
 EXPOSE 8080
 
-# --timeout 300 (aligné sur le --timeout=300 de Cloud Run) : l'analyse
-# synchrone /api/analyze peut désormais inclure une passe du modèle
-# d'accords ISMIR sur CPU (ensemble de 5, ~30-90 s selon la durée).
-CMD ["bash", "-c", "./bgutil-pot server --host 127.0.0.1 --port 4416 & exec gunicorn app:app --bind 0.0.0.0:${PORT:-8080} --workers 1 --timeout 300"]
+# --timeout 600 (aligné sur le --timeout=600 de Cloud Run) : l'analyse
+# synchrone /api/analyze peut cumuler, sur un morceau long, chroma +
+# detect_meter + detect_beats (madmom, ~1 min) + l'ensemble de 5 modèles
+# d'accords ISMIR sur CPU (~1-2 min). Le sous-processus modèle a son
+# propre timeout (240 s) avec repli sur les gabarits.
+CMD ["bash", "-c", "./bgutil-pot server --host 127.0.0.1 --port 4416 & exec gunicorn app:app --bind 0.0.0.0:${PORT:-8080} --workers 1 --timeout 600"]

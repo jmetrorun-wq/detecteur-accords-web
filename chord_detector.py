@@ -6,6 +6,7 @@ import librosa
 from madmom.audio.chroma import DeepChromaProcessor
 from madmom.audio.signal import Signal
 from madmom.features.downbeats import RNNDownBeatProcessor, DBNDownBeatTrackingProcessor
+from madmom.features.beats import RNNBeatProcessor, DBNBeatTrackingProcessor
 
 NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
@@ -230,6 +231,26 @@ def _uniform_bar_times(tempo_bpm: float, duration: float) -> list[float]:
     return [b * bar_dur for b in range(n_bars)]
 
 
+def detect_beats(y: np.ndarray, sr: int) -> list[float]:
+    """Temps (secondes) de tous les temps du morceau entier, via le beat
+    tracker de madmom (RNNBeatProcessor + DBNBeatTrackingProcessor).
+
+    Volontairement le tracker de *temps* et non celui de *downbeats*
+    (celui de detect_meter) : pas d'états de position-dans-la-mesure dans
+    le HMM → nettement plus léger en RAM et en calcul, et pas de piège
+    3/4↔6/8 (on ne cherche pas la signature ici). Sert à caler les
+    transitions d'accord du modèle ISMIR sur les temps (cf.
+    largevocab_chords.detect(beats=...)), ce qui supprime le retard
+    « le HMM attend d'avoir assez d'évidence » perçu sur de la vraie
+    musique. Lève une exception si la détection échoue — l'appelant
+    continue alors sans calage sur les temps.
+    """
+    sig = Signal(y.astype(np.float32), sample_rate=sr, num_channels=1)
+    activations = RNNBeatProcessor()(sig)
+    beats = DBNBeatTrackingProcessor(fps=100)(activations)
+    return [float(t) for t in beats]
+
+
 # ── Détection de tempo (autocorrélation, sans dépendance numba) ───────
 # Utilisée uniquement en secours si detect_meter échoue.
 
@@ -409,7 +430,15 @@ def detect_chords(
             # (chroma CNN) si le sous-processus échoue.
             try:
                 from largevocab_chords import detect as _largevocab_detect
-                chords = _largevocab_detect(load_path, duration)
+                # Temps du morceau (best-effort) pour caler les transitions
+                # d'accord dessus — supprime le retard perçu sur de la
+                # vraie musique.
+                beats = None
+                try:
+                    beats = detect_beats(y, sr)
+                except Exception as exc:
+                    print(f'detect_beats a échoué ({exc!r}), accords non calés sur les temps')
+                chords = _largevocab_detect(load_path, duration, beats=beats)
                 if not chords:
                     raise ValueError('aucun accord renvoyé par le modèle')
             except Exception as exc:

@@ -71,6 +71,14 @@ function fmtTime(s) {
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 }
 
+// Anticipation d'affichage pendant la lecture : audio.currentTime est
+// systématiquement en retard sur la sortie audio réelle (buffer de sortie,
+// surtout sur iOS Safari) — un décalage à peu près constant qui touche
+// aussi bien le gros accord que la barre de mesures. On regarde donc
+// SYNC_LEAD_S en avant lors du rafraîchissement à chaque frame. À ajuster
+// si les accords passent en avance (baisser) ou toujours en retard (monter).
+const SYNC_LEAD_S = 0.25;
+
 // ── Transposition JS (identique à chord_detector.py) ──────────────
 const NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 
@@ -508,7 +516,9 @@ function syncLoop() {
     seekBar.value = String(t);
     timeCurrent.textContent = fmtTime(t);
   }
-  updateAt(t);
+  // La barre de progression suit le temps réel ; accord/piano/guitare/
+  // mesures regardent un poil en avant (cf. SYNC_LEAD_S).
+  updateAt(t + SYNC_LEAD_S);
   syncLoopId = requestAnimationFrame(syncLoop);
 }
 
