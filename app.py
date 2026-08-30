@@ -121,6 +121,19 @@ def assetlinks():
     return jsonify(_ASSETLINKS)
 
 
+@app.route('/app.apk')
+@app.route('/android')
+def download_apk():
+    """Lien direct pour installer l'appli Android : ouvrir cette URL sur
+    le téléphone télécharge l'APK signé (cf. ~/.local/bin/chordsplit-android)."""
+    return send_file(
+        os.path.join(app.static_folder, 'ChordSplit.apk'),
+        mimetype='application/vnd.android.package-archive',
+        as_attachment=True,
+        download_name='ChordSplit.apk',
+    )
+
+
 @app.route('/')
 def index():
     # Jamais mis en cache : le HTML porte le ?v= des assets, il doit
