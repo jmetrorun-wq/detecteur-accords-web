@@ -180,7 +180,8 @@ def analyze():
         return jsonify({'error': 'Nom de fichier vide.'}), 400
 
     ext = os.path.splitext(f.filename)[1].lower()
-    if ext not in ('.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac', '.webm', '.mp4'):
+    if ext not in ('.mp3', '.wav', '.flac', '.ogg', '.oga', '.opus', '.m4a',
+                   '.aac', '.aiff', '.aif', '.wma', '.webm', '.mp4'):
         return jsonify({'error': f'Format non supporté : {ext}'}), 400
 
     file_id = str(uuid.uuid4())
@@ -205,6 +206,21 @@ def analyze():
             return jsonify({'error': "Conversion de l'enregistrement échouée."}), 500
         filepath = wav_path
         file_id += '.wav'
+    elif ext in ('.wma', '.aiff', '.aif', '.opus', '.oga'):
+        # Formats acceptés à l'analyse mais pas lus de façon fiable par
+        # tous les <audio> (surtout .wma, jamais lu en navigateur) — on
+        # transcode en mp3 dès l'upload pour que la lecture marche partout.
+        mp3_path = os.path.join(UPLOAD_DIR, file_id + '.mp3')
+        result = subprocess.run(
+            ['ffmpeg', '-y', '-i', filepath, '-ac', '1',
+             '-codec:a', 'libmp3lame', '-b:a', '192k', mp3_path],
+            capture_output=True, timeout=180,
+        )
+        os.unlink(filepath)
+        if result.returncode != 0:
+            return jsonify({'error': "Conversion du fichier audio échouée."}), 500
+        filepath = mp3_path
+        file_id += '.mp3'
     else:
         file_id += ext
 
