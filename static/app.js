@@ -464,7 +464,12 @@ function updateBeatStripAt(time) {
 }
 
 function updateAt(time) {
-  updateChordAt(time);
+  // Le gros accord regarde SYNC_LEAD_S en avant (compense le retard de
+  // audio.currentTime sur la sortie réelle ; imperceptible sur des
+  // segments de plusieurs secondes). La barre défilante, elle, suit le
+  // temps BRUT : ses cases font ~une demi-seconde, une anticipation de
+  // 0,25 s décalerait le surlignage d'environ une case.
+  updateChordAt(time + SYNC_LEAD_S);
   updateBeatStripAt(time);
 }
 
@@ -506,9 +511,9 @@ function syncLoop() {
     seekBar.value = String(t);
     timeCurrent.textContent = fmtTime(t);
   }
-  // La barre de progression suit le temps réel ; accord/piano/guitare/
-  // mesures regardent un poil en avant (cf. SYNC_LEAD_S).
-  updateAt(t + SYNC_LEAD_S);
+  // updateAt applique lui-même l'anticipation (SYNC_LEAD_S) au seul gros
+  // accord ; on lui passe le temps brut.
+  updateAt(t);
   syncLoopId = requestAnimationFrame(syncLoop);
 }
 
