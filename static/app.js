@@ -319,10 +319,16 @@ function currentChords() {
 
 // Découpe le morceau en cases d'UN temps chacune (façon Chordify), sur
 // la grille de mesures détectée côté serveur (state.barTimes), chaque
-// mesure subdivisée en state.beatsPerBar temps égaux. Chaque case porte
-// l'accord en cours à son début ; on n'affiche son nom que quand il
-// change (case vide = accord tenu). La 1re case d'une mesure porte une
-// barre de mesure.
+// mesure subdivisée en state.beatsPerBar temps égaux. On n'affiche le
+// nom d'accord que quand il change (case vide = accord tenu). La 1re
+// case d'une mesure porte une barre de mesure.
+//
+// L'accord d'une case est échantillonné à son MILIEU, pas à son début :
+// un changement d'accord est ainsi rattaché à la case la plus proche
+// (arrondi) et non systématiquement à la case suivante — la grille de
+// mesures uniforme (state.barTimes, extrapolée) et la grille de temps
+// réelle sur laquelle les accords sont calés peuvent légèrement
+// diverger, ce qui décalait le nom d'une case entière.
 function computeBeatCells() {
   const chords = currentChords();
   const barTimes = state.barTimes;
@@ -345,7 +351,7 @@ function computeBeatCells() {
       const start = barStart + k * beatDur;
       if (start >= state.duration) break;
       const end = Math.min(start + beatDur, state.duration);
-      const c = chordAt(start);
+      const c = chordAt(start + beatDur / 2);
       cells.push({
         start, end,
         chord: c.chord,
