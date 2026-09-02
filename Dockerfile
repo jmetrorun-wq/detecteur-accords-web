@@ -10,11 +10,10 @@ COPY . .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Séparation de pistes (demucs) : uniquement installé ici (Cloud Run),
-# jamais dans requirements.txt (Render, 512 Mo — torch seul coûte déjà
-# ~150 Mo rien qu'à l'import, cf. stem_separator.py). Roue CPU explicite
-# pour éviter de télécharger les variantes CUDA (inutiles ici, beaucoup
-# plus lourdes).
+# Séparation de pistes (demucs) : installé seulement ici, pas dans
+# requirements.txt (qui sert aussi au .venv local en Python 3.9 ; torch
+# seul coûte ~150 Mo rien qu'à l'import, cf. stem_separator.py). Roue CPU
+# explicite pour éviter les variantes CUDA (inutiles ici, bien plus lourdes).
 #
 # Piège découvert en testant : NE PAS downgrader numpy<2 pour torch (une
 # tentation vu que torch 2.2.2 l'exige) — madmom (déjà installé juste
@@ -36,7 +35,7 @@ RUN python -c "from demucs.pretrained import get_model; get_model('htdemucs')"
 
 # Détection d'accords à grand vocabulaire (modèle ISMIR 2019 vendoré dans
 # chordnet_ismir/, cf. largevocab_chords.py). Gardé par
-# ENABLE_LARGEVOCAB_CHORDS, jamais dans requirements.txt/Render (torch).
+# ENABLE_LARGEVOCAB_CHORDS ; deps installées ici seulement (torch).
 # Poids inclus dans le repo (chordnet_ismir/cache_data/*.sdict, ~27 Mo),
 # rien à pré-télécharger. Deps manquantes (torch déjà installé ci-dessus) :
 #  - pretty_midi + h5py : importées par le mini-framework `mir` du modèle

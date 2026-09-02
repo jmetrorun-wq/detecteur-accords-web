@@ -1,11 +1,9 @@
 """Séparation de pistes (voix/batterie/basse/autre) via demucs.
 
-N'existe et n'est utile que sur le déploiement Cloud Run (garde
-`ENABLE_STEM_SEPARATION`, cf. app.py) : torch/torchaudio/demucs (~2-3 Go de
-RAM au traitement, cf. Dockerfile) sont beaucoup trop lourds pour le
-budget Render (512 Mo), au point où même leur simple *import* (~150 Mo
-pour torch seul) serait déjà problématique — donc ce module n'importe
-jamais torch/demucs au niveau module, seulement à l'intérieur de
+Activé par la garde `ENABLE_STEM_SEPARATION` (cf. app.py). torch/torchaudio/
+demucs (~2-3 Go de RAM au traitement, cf. Dockerfile) sont lourds — même
+leur simple *import* coûte ~150 Mo pour torch seul — donc ce module
+n'importe jamais torch/demucs au niveau module, seulement à l'intérieur de
 `_run_demucs`, et le traitement tourne dans un sous-processus séparé
 (`python -m demucs`) pour que cette RAM soit entièrement libérée dès la
 fin du job plutôt que de rester attachée au worker gunicorn.

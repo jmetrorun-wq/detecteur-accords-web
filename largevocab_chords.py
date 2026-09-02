@@ -11,9 +11,8 @@ pour demucs : torch (~150 Mo rien qu'à l'import) ne doit jamais être
 importé dans le worker gunicorn, et la RAM du modèle doit être libérée
 dès la fin du job.
 
-N'est utile et activé que sur le déploiement Cloud Run (torch installé
-seulement dans le Dockerfile, jamais dans requirements.txt / Render),
-via la variable d'environnement `ENABLE_LARGEVOCAB_CHORDS` — même
+Activé par la variable d'environnement `ENABLE_LARGEVOCAB_CHORDS` (torch
+installé seulement dans le Dockerfile, pas dans requirements.txt) — même
 principe qu'`ENABLE_METER_DETECTION` / `ENABLE_STEM_SEPARATION`.
 
 Le modèle produit un vocabulaire riche (9/11/13, renversements, hdim7…) ;

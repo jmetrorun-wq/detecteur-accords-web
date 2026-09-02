@@ -404,10 +404,9 @@ def detect_chords(
 
         if os.environ.get('ENABLE_METER_DETECTION'):
             # detect_meter (RNN+HMM madmom) pousse la RAM à plus de 1,5 Go
-            # même réduit au minimum — largement au-dessus des 512 Mo du
-            # plan Render gratuit (cf. historique git). N'est donc activé
-            # que sur une plateforme au budget RAM plus large (ex. Cloud
-            # Run), via cette variable d'environnement.
+            # même réduit au minimum (cf. historique git). Gardé par cette
+            # variable d'environnement, qui sert aussi de kill-switch si le
+            # tracker de mesures déraille en prod.
             try:
                 beats_per_bar, bar_times, tempo_bpm = detect_meter(y, sr, duration)
                 if not bar_times:

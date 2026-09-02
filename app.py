@@ -47,8 +47,8 @@ def _inject_asset_version():
 UPLOAD_DIR = os.path.join(tempfile.gettempdir(), 'chordweb')
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Limite de durée pour les liens YouTube : au-delà, le pic mémoire de
-# l'analyse (STFT + chroma) dépasse la RAM du plan gratuit Render (512 Mo).
+# Limite de durée pour les liens YouTube : borne le pic mémoire de
+# l'analyse (STFT + chroma) sur un morceau long.
 MAX_YOUTUBE_DURATION_S = 360
 
 # Limite de durée pour la séparation de pistes (demucs) : la RAM du
@@ -57,10 +57,10 @@ MAX_YOUTUBE_DURATION_S = 360
 # Cloud Run même avec le reste du pipeline actif à côté.
 MAX_SEPARATION_DURATION_S = 480
 
-# Séparation de pistes : uniquement disponible sur le déploiement Cloud Run
-# (torch/torchaudio/demucs installés seulement dans le Dockerfile, jamais
-# dans requirements.txt/Render — cf. stem_separator.py). Gardé par cette
-# variable d'environnement, sur le même principe qu'ENABLE_METER_DETECTION.
+# Séparation de pistes : torch/torchaudio/demucs ne sont installés que dans
+# le Dockerfile (pas dans requirements.txt, qui sert aussi au .venv local
+# en Python 3.9 — cf. stem_separator.py). Gardé par cette variable
+# d'environnement (kill-switch), même principe qu'ENABLE_METER_DETECTION.
 STEM_SEPARATION_ENABLED = bool(os.environ.get('ENABLE_STEM_SEPARATION'))
 
 
