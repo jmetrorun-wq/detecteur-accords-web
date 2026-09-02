@@ -18,7 +18,7 @@ steps:
       - --image=europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/detecteur-accords-web:$COMMIT_SHA
       - --region=europe-west1
       - --memory=6Gi
-      - --cpu=2
+      - --cpu=4
       - --timeout=600
       - --allow-unauthenticated
       - --no-cpu-throttling
