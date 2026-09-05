@@ -532,3 +532,52 @@ html, body {
 #btn-reanalyze-other {
   margin-top: 0.3rem;
 }
+
+/* ── Écran Historique ────────────────────────────────────────────── */
+#screen-history { overflow-y: auto; gap: 0; }
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem;
+}
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 0.9rem;
+  cursor: pointer;
+  text-align: left;
+}
+.history-item:active { opacity: 0.8; }
+.history-info { flex: 1; min-width: 0; }
+.history-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-meta {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  margin-top: 0.15rem;
+}
+.history-delete {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.1rem;
+  padding: 0.4rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.history-empty {
+  color: var(--text-dim);
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  font-size: 0.9rem;
+}

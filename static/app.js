@@ -21,7 +21,12 @@ const screens = {
   record:   document.getElementById('screen-record'),
   loading:  document.getElementById('screen-loading'),
   results:  document.getElementById('screen-results'),
+  history:  document.getElementById('screen-history'),
 };
+const btnHistory      = document.getElementById('btn-history');
+const btnHistoryBack  = document.getElementById('btn-history-back');
+const historyListEl   = document.getElementById('history-list');
+const historyEmptyEl  = document.getElementById('history-empty');
 const fileInput       = document.getElementById('file-input');
 const youtubeForm     = document.getElementById('youtube-form');
 const youtubeUrlInput = document.getElementById('youtube-url');
@@ -780,6 +785,96 @@ window.addEventListener('resize', () => {
     }
   }, 150);
 });
+
+// ── Historique ─────────────────────────────────────────────────────
+// Chaque analyse réussie est mise en cache côté serveur (audio + résultat
+// complet, cf. history_store.py sur GCS) — rejouer une entrée ne relance
+// jamais detect_chords(), juste un téléchargement de l'audio en cache.
+btnHistory.addEventListener('click', () => {
+  showScreen('history');
+  renderHistory();
+});
+btnHistoryBack.addEventListener('click', () => showScreen('upload'));
+
+async function renderHistory() {
+  historyListEl.innerHTML = '';
+  let entries = [];
+  try {
+    const res = await fetch('/api/history');
+    entries = await res.json();
+  } catch {
+    entries = [];
+  }
+  historyEmptyEl.classList.toggle('hidden', entries.length > 0);
+
+  for (const entry of entries) {
+    const item = document.createElement('div');
+    item.className = 'history-item';
+
+    const date = new Date(entry.created_at * 1000).toLocaleString('fr-FR', {
+      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+    });
+    const meta = [
+      entry.key_fr,
+      entry.tempo ? `${entry.tempo} BPM` : null,
+      entry.duration ? fmtTime(entry.duration) : null,
+      date,
+    ].filter(Boolean).join(' · ');
+
+    const info = document.createElement('div');
+    info.className = 'history-info';
+    const titleEl = document.createElement('div');
+    titleEl.className = 'history-title';
+    titleEl.textContent = entry.title || 'Sans titre';
+    const metaEl = document.createElement('div');
+    metaEl.className = 'history-meta';
+    metaEl.textContent = meta;
+    info.append(titleEl, metaEl);
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'history-delete';
+    delBtn.title = 'Supprimer';
+    delBtn.textContent = '🗑';
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteHistoryEntry(entry.id, item);
+    });
+
+    item.append(info, delBtn);
+    item.addEventListener('click', () => loadFromHistory(entry.id));
+    historyListEl.appendChild(item);
+  }
+}
+
+async function loadFromHistory(id) {
+  showScreen('loading');
+  loadingFilename.textContent = '';
+  setAnalyzeProgress(0);
+  loadingSub.textContent = 'Chargement depuis l’historique…';
+  try {
+    const res = await fetch(`/api/history/${id}/load`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? `Erreur ${res.status}`);
+    applyResults(data);
+  } catch (err) {
+    alert(`Erreur : ${err.message}`);
+    showScreen('history');
+  }
+}
+
+async function deleteHistoryEntry(id, itemEl) {
+  itemEl.style.opacity = '0.5';
+  try {
+    const res = await fetch(`/api/history/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error();
+    itemEl.remove();
+    historyEmptyEl.classList.toggle('hidden', historyListEl.children.length > 0);
+  } catch {
+    itemEl.style.opacity = '1';
+    alert('Suppression échouée.');
+  }
+}
 
 // ── Init ───────────────────────────────────────────────────────────
 showScreen('upload');

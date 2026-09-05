@@ -9,10 +9,12 @@ présents dans chord_detector.detect_chords, jusqu'ici sans effet visible
 côté client (l'ancien /api/analyze était un aller-retour HTTP unique,
 bloquant jusqu'à la fin de l'analyse).
 """
+import os
 import threading
 import uuid
 from typing import Optional
 
+import history_store
 from chord_detector import chord_color, chord_type_name, detect_chords, detect_structure
 
 _jobs: dict[str, dict] = {}
@@ -89,6 +91,13 @@ def start_job(filepath: str, file_id: str, extra: Optional[dict] = None) -> str:
     def run() -> None:
         try:
             payload = _build_payload(filepath, file_id, extra, job_id)
+            # Ne met pas en historique la ré-analyse d'une piste séparée
+            # (sep_*.mp3, dérivée d'une analyse déjà en historique) —
+            # seul le fichier réellement importé par l'utilisateur compte.
+            if not file_id.startswith('sep_'):
+                history_store.save_entry(
+                    uuid.uuid4().hex, filepath, os.path.splitext(file_id)[1], payload,
+                )
             with _jobs_lock:
                 _jobs[job_id]['status'] = 'done'
                 _jobs[job_id]['progress'] = 100

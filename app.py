@@ -13,6 +13,7 @@ from typing import Optional
 import yt_dlp
 from flask import Flask, request, jsonify, send_file, render_template, make_response
 import analyze_jobs
+import history_store
 from pdf_export import build_chord_chart_pdf
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
@@ -198,6 +199,11 @@ def analyze():
                    '.aac', '.aiff', '.aif', '.wma', '.webm', '.mp4'):
         return jsonify({'error': f'Format non supporté : {ext}'}), 400
 
+    # Nom d'origine (sans extension) utilisé comme titre par défaut, pour
+    # que l'export PDF et l'historique (cf. history_store.py) affichent
+    # autre chose qu'un identifiant vide.
+    title = os.path.splitext(f.filename)[0]
+
     file_id = str(uuid.uuid4())
     filepath = os.path.join(UPLOAD_DIR, file_id + ext)
     f.save(filepath)
@@ -238,7 +244,7 @@ def analyze():
     else:
         file_id += ext
 
-    return _start_analyze_job(filepath, file_id)
+    return _start_analyze_job(filepath, file_id, {'title': title})
 
 
 @app.route('/api/analyze-youtube', methods=['POST'])
@@ -368,6 +374,41 @@ def serve_audio(file_id):
     ext = os.path.splitext(file_id)[1].lower()
     mimetype = _AUDIO_MIMETYPES.get(ext)
     return send_file(filepath, conditional=True, mimetype=mimetype)
+
+
+@app.route('/api/history')
+def history_list():
+    return jsonify(history_store.list_entries())
+
+
+@app.route('/api/history/<history_id>/load', methods=['POST'])
+def history_load(history_id):
+    """Recharge une analyse déjà en historique : télécharge l'audio en
+    cache vers UPLOAD_DIR (servi ensuite par /api/audio, Range/iOS déjà
+    géré là-bas) et renvoie le résultat complet déjà calculé — aucune
+    ré-analyse, la réponse a exactement la forme d'un job /api/analyze
+    terminé pour qu'applyResults() côté frontend n'ait rien à distinguer."""
+    result = history_store.load_result(history_id)
+    if not result:
+        return jsonify({'error': 'Introuvable en historique.'}), 404
+
+    ext = os.path.splitext(result.get('file_id') or '')[1] or '.mp3'
+    local_id = uuid.uuid4().hex + ext
+    if not history_store.download_audio(history_id, ext, os.path.join(UPLOAD_DIR, local_id)):
+        return jsonify({'error': "Fichier audio introuvable en historique."}), 404
+
+    out = dict(result)
+    out['file_id'] = local_id
+    return jsonify(out)
+
+
+@app.route('/api/history/<history_id>', methods=['DELETE'])
+def history_delete(history_id):
+    try:
+        history_store.delete_entry(history_id)
+    except Exception as exc:
+        return jsonify({'error': f'Suppression échouée : {exc}'}), 500
+    return jsonify({'ok': True})
 
 
 @app.route('/api/separate', methods=['POST'])

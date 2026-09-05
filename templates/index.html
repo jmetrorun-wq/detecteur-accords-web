@@ -34,6 +34,11 @@
         Enregistrer en direct
       </button>
 
+      <button type="button" id="btn-history" class="btn-secondary">
+        <span class="btn-icon">🕘</span>
+        Historique
+      </button>
+
       <p class="format-hint">MP3 · M4A · WAV · FLAC · OGG · AAC · AIFF · WMA</p>
 
       <div class="upload-divider">ou</div>
@@ -58,6 +63,16 @@
       <p id="record-timer" class="record-timer">0:00</p>
       <button type="button" id="btn-record-stop" class="btn-upload">Arrêter et analyser</button>
     </div>
+  </section>
+
+  <!-- ════════════════════════ ÉCRAN HISTORIQUE ════════════════════ -->
+  <section id="screen-history" class="screen">
+    <header class="results-header">
+      <button id="btn-history-back" class="btn-icon-only" title="Retour">←</button>
+      <div class="header-info"><strong>Historique</strong></div>
+    </header>
+    <div id="history-list" class="history-list"></div>
+    <p id="history-empty" class="history-empty hidden">Aucune analyse pour l'instant — les morceaux analysés apparaîtront ici.</p>
   </section>
 
   <!-- ════════════════════════ ÉCRAN CHARGEMENT ════════════════════ -->
