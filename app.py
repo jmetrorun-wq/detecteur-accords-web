@@ -13,6 +13,7 @@ from typing import Optional
 import yt_dlp
 from flask import Flask, request, jsonify, send_file, render_template, make_response
 import analyze_jobs
+import dailymotion_source
 import history_store
 from pdf_export import build_chord_chart_pdf
 
@@ -51,6 +52,11 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # Limite de durée pour les liens YouTube : borne le pic mémoire de
 # l'analyse (STFT + chroma) sur un morceau long.
 MAX_YOUTUBE_DURATION_S = 360
+
+# Même limite pour la recherche Dailymotion (cf. dailymotion_source.py) —
+# remplace YouTube côté utilisateur, abandonné plus bas (blocage anti-bot
+# systématique et permanent par IP, jamais rencontré sur Dailymotion).
+MAX_DAILYMOTION_DURATION_S = 360
 
 # Limite de durée pour la séparation de pistes (demucs) : la RAM du
 # sous-processus croît avec la durée du morceau (~3,3 Go mesurés sur 5min38,
@@ -245,6 +251,39 @@ def analyze():
         file_id += ext
 
     return _start_analyze_job(filepath, file_id, {'title': title})
+
+
+@app.route('/api/dailymotion/search')
+def dailymotion_search():
+    query = (request.args.get('q') or '').strip()
+    if not query:
+        return jsonify([])
+    return jsonify(dailymotion_source.search(query))
+
+
+@app.route('/api/dailymotion/analyze', methods=['POST'])
+def dailymotion_analyze():
+    data = request.get_json(silent=True) or {}
+    video_id = (data.get('video_id') or '').strip()
+    title = (data.get('title') or '').strip()
+    duration = float(data.get('duration') or 0)
+    if not video_id:
+        return jsonify({'error': 'Vidéo manquante.'}), 400
+    if duration > MAX_DAILYMOTION_DURATION_S:
+        return jsonify({
+            'error': (
+                f'Vidéo trop longue ({duration // 60:.0f} min) : '
+                f'{MAX_DAILYMOTION_DURATION_S // 60} min max.'
+            )
+        }), 400
+
+    file_id = str(uuid.uuid4())
+    try:
+        wav_path = dailymotion_source.download_audio(video_id, os.path.join(UPLOAD_DIR, file_id))
+    except Exception as exc:
+        return jsonify({'error': f'Téléchargement échoué : {exc}'}), 500
+
+    return _start_analyze_job(wav_path, file_id + '.wav', {'title': title})
 
 
 @app.route('/api/analyze-youtube', methods=['POST'])

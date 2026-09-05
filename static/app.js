@@ -28,8 +28,9 @@ const btnHistoryBack  = document.getElementById('btn-history-back');
 const historyListEl   = document.getElementById('history-list');
 const historyEmptyEl  = document.getElementById('history-empty');
 const fileInput       = document.getElementById('file-input');
-const youtubeForm     = document.getElementById('youtube-form');
-const youtubeUrlInput = document.getElementById('youtube-url');
+const dailymotionForm    = document.getElementById('dailymotion-form');
+const dailymotionQuery   = document.getElementById('dailymotion-query');
+const dailymotionResults = document.getElementById('dailymotion-results');
 const loadingFilename = document.getElementById('loading-filename');
 const loadingSub          = document.getElementById('loading-sub');
 const loadingProgressFill = document.getElementById('loading-progress-fill');
@@ -239,23 +240,62 @@ function uploadAndAnalyze(file) {
   return performAnalyze(fetch('/api/analyze', { method: 'POST', body: fd }));
 }
 
-youtubeForm.addEventListener('submit', (e) => {
+// ── Recherche Dailymotion (remplace le lien YouTube, abandonné :
+// blocage anti-bot systématique par IP côté serveur, jamais rencontré
+// sur Dailymotion — cf. dailymotion_source.py) ─────────────────────
+dailymotionForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const url = youtubeUrlInput.value.trim();
-  if (!url) return;
-  loadingFilename.textContent = url;
+  const query = dailymotionQuery.value.trim();
+  if (!query) return;
+
+  dailymotionResults.classList.remove('hidden');
+  dailymotionResults.innerHTML = '<p class="dm-empty">Recherche…</p>';
+  let results = [];
+  try {
+    const res = await fetch(`/api/dailymotion/search?q=${encodeURIComponent(query)}`);
+    results = await res.json();
+  } catch {
+    results = [];
+  }
+
+  dailymotionResults.innerHTML = '';
+  if (!results.length) {
+    dailymotionResults.innerHTML = '<p class="dm-empty">Aucun résultat.</p>';
+    return;
+  }
+  for (const item of results) {
+    const row = document.createElement('div');
+    row.className = 'dm-result';
+    const meta = [item.channel, item.duration ? fmtTime(item.duration) : null]
+      .filter(Boolean).join(' · ');
+    row.innerHTML = `
+      <img class="dm-thumb" src="${item.thumbnail || ''}" alt="" loading="lazy">
+      <div class="dm-info">
+        <div class="dm-title"></div>
+        <div class="dm-meta"></div>
+      </div>
+    `;
+    row.querySelector('.dm-title').textContent = item.title || '';
+    row.querySelector('.dm-meta').textContent = meta;
+    row.addEventListener('click', () => analyzeDailymotion(item));
+    dailymotionResults.appendChild(row);
+  }
+});
+
+function analyzeDailymotion(item) {
+  loadingFilename.textContent = item.title || '';
   showScreen('loading');
-  performAnalyze(fetch('/api/analyze-youtube', {
+  performAnalyze(fetch('/api/dailymotion/analyze', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({ video_id: item.id, title: item.title, duration: item.duration }),
   }));
-});
+}
 
 // ── Enregistrement micro façon Shazam ──────────────────────────────
 // Capture un court extrait audio en direct (concert, radio, quelqu'un
 // qui joue à côté) pour lancer la même analyse d'accords que sur un
-// fichier uploadé, sans passer par un fichier ou un lien YouTube.
+// fichier uploadé, sans passer par un fichier ou une recherche Dailymotion.
 const MAX_RECORD_S = 60; // arrêt auto : un extrait suffit à identifier les accords
 
 // Ordre de préférence des formats : webm/opus (Chrome/Firefox) d'abord,
@@ -769,7 +809,9 @@ btnBack.addEventListener('click', () => {
   audioEl.pause();
   audioEl.src = '';
   fileInput.value = '';
-  youtubeUrlInput.value = '';
+  dailymotionQuery.value = '';
+  dailymotionResults.classList.add('hidden');
+  dailymotionResults.innerHTML = '';
   showScreen('upload');
 });
 

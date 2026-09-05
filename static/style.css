@@ -119,11 +119,11 @@ html, body {
   height: 1px;
   background: var(--border);
 }
-.youtube-form {
+.search-form {
   display: flex;
   gap: 0.5rem;
 }
-.youtube-input {
+.search-input {
   flex: 1;
   min-width: 0;
   padding: 0.85rem 1rem;
@@ -134,8 +134,8 @@ html, body {
   font-size: 0.95rem;
   min-height: 48px;
 }
-.youtube-input::placeholder { color: var(--text-dim); }
-.btn-youtube {
+.search-input::placeholder { color: var(--text-dim); }
+.btn-search {
   padding: 0.85rem 1.25rem;
   background: var(--surface2);
   border: 1px solid var(--border);
@@ -145,7 +145,56 @@ html, body {
   cursor: pointer;
   min-height: 48px;
 }
-.btn-youtube:active { opacity: 0.8; }
+.btn-search:active { opacity: 0.8; }
+
+/* ── Résultats de recherche Dailymotion ─────────────────────────── */
+.dailymotion-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  text-align: left;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.dm-result {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.7rem;
+  cursor: pointer;
+}
+.dm-result:active { opacity: 0.8; }
+.dm-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.dm-info { flex: 1; min-width: 0; }
+.dm-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dm-meta {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  margin-top: 0.1rem;
+}
+.dm-empty {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 0.5rem;
+}
 
 /* ── Écran Enregistrement (façon Shazam) ────────────────────────── */
 #screen-record {

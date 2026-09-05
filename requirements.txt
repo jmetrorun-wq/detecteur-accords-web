@@ -8,6 +8,11 @@ audioread>=3.0.0
 yt-dlp>=2024.1.0
 reportlab>=4.0.0
 google-cloud-storage>=2.10.0
+requests>=2.31.0
+# Requis par dailymotion_source.py (impersonate='chrome') : sans lui, la
+# récupération du m3u8 Dailymotion échoue systématiquement en HTTP 403
+# (testé, pas seulement sur Cloud Run).
+curl_cffi>=0.7.0
 # La version PyPI (0.16.1) casse avec les NumPy récents (np.float supprimé) ;
 # le correctif n'existe que sur la branche GitHub, pas encore republié.
 madmom @ git+https://github.com/CPJKU/madmom.git@27f032e8947204902c675e5e341a3faf5dc86dae

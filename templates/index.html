@@ -43,10 +43,11 @@
 
       <div class="upload-divider">ou</div>
 
-      <form id="youtube-form" class="youtube-form">
-        <input type="url" id="youtube-url" class="youtube-input" placeholder="Lien YouTube" required>
-        <button type="submit" class="btn-youtube">Analyser</button>
+      <form id="dailymotion-form" class="search-form">
+        <input type="text" id="dailymotion-query" class="search-input" placeholder="Chercher sur Dailymotion (artiste, titre…)" required>
+        <button type="submit" class="btn-search">🔍</button>
       </form>
+      <div id="dailymotion-results" class="dailymotion-results hidden"></div>
     </div>
   </section>
 
@@ -168,7 +169,7 @@
           <audio class="stem-audio" controls preload="none"></audio>
           <a class="stem-download" title="Télécharger">⬇</a>
         </div>
-        <button id="btn-reanalyze-other" class="btn-youtube">Ré-analyser les accords sans batterie/voix</button>
+        <button id="btn-reanalyze-other" class="btn-search">Ré-analyser les accords sans batterie/voix</button>
       </div>
     </div>
 
