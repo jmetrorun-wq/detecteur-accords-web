@@ -15,7 +15,9 @@
       "infoPlist": {
         "NSMicrophoneUsageDescription": "ChordSplit utilise le micro pour identifier les accords d'un morceau capté autour de toi.",
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ]
       }
     },
     "android": {
@@ -26,7 +28,10 @@
         "monochromeImage": "./assets/android-icon-monochrome.png",
         "backgroundColor": "#0F1319"
       },
-      "permissions": ["android.permission.RECORD_AUDIO"]
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -46,7 +51,13 @@
         {
           "microphonePermission": "ChordSplit utilise le micro pour identifier les accords d'un morceau capté autour de toi."
         }
-      ]
-    ]
+      ],
+      "expo-status-bar"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b453d1d2-d03d-4c92-aff0-876b0bc6b3a8"
+      }
+    }
   }
 }
