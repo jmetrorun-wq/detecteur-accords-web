@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "ChordSplit",
+    "slug": "chordsplit",
+    "owner": "djazzy97418",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "chordsplit",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "fr.chordsplit.app",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "ChordSplit utilise le micro pour identifier les accords d'un morceau capté autour de toi.",
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": ["audio"]
+      }
+    },
+    "android": {
+      "package": "fr.chordsplit.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png",
+        "backgroundColor": "#0F1319"
+      },
+      "permissions": ["android.permission.RECORD_AUDIO"]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#0F1319"
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "ChordSplit utilise le micro pour identifier les accords d'un morceau capté autour de toi."
+        }
+      ]
+    ]
+  }
+}
