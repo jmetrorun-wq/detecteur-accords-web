@@ -279,11 +279,11 @@ def dailymotion_analyze():
 
     file_id = str(uuid.uuid4())
     try:
-        wav_path = dailymotion_source.download_audio(video_id, os.path.join(UPLOAD_DIR, file_id))
+        audio_path = dailymotion_source.download_audio(video_id, os.path.join(UPLOAD_DIR, file_id))
     except Exception as exc:
         return jsonify({'error': f'Téléchargement échoué : {exc}'}), 500
 
-    return _start_analyze_job(wav_path, file_id + '.wav', {'title': title})
+    return _start_analyze_job(audio_path, file_id + '.mp3', {'title': title})
 
 
 @app.route('/api/analyze-youtube', methods=['POST'])
