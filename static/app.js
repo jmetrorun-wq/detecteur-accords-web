@@ -26,6 +26,9 @@ const fileInput       = document.getElementById('file-input');
 const youtubeForm     = document.getElementById('youtube-form');
 const youtubeUrlInput = document.getElementById('youtube-url');
 const loadingFilename = document.getElementById('loading-filename');
+const loadingSub          = document.getElementById('loading-sub');
+const loadingProgressFill = document.getElementById('loading-progress-fill');
+const loadingProgressLabel = document.getElementById('loading-progress-label');
 const btnRecord       = document.getElementById('btn-record');
 const btnRecordStop   = document.getElementById('btn-record-stop');
 const btnRecordCancel = document.getElementById('btn-record-cancel');
@@ -122,7 +125,63 @@ fileInput.addEventListener('change', () => {
   uploadAndAnalyze(file);
 });
 
+// L'analyse (chroma + détection de mesures/temps + ensemble d'accords à
+// grand vocabulaire) prend de 1 à 4 minutes — /api/analyze démarre donc
+// un job en tâche de fond et renvoie {job_id}, suivi par polling sur
+// /api/analyze/status/<job_id> (même pattern que la séparation de
+// pistes). Étapes/pourcentages calés sur les callbacks de progression de
+// chord_detector.detect_chords (5/10/45/50/55/95/100 %).
+const ANALYZE_POLL_MS = 1200;
+const ANALYZE_PHASES = [
+  { max: 10, label: 'Préparation du fichier…' },
+  { max: 45, label: 'Détection du tempo et des mesures…' },
+  { max: 55, label: 'Analyse de la tonalité…' },
+  { max: 95, label: 'Reconnaissance des accords (vocabulaire enrichi)…' },
+  { max: 100, label: 'Finalisation…' },
+];
+
+function analyzePhaseLabel(pct) {
+  const phase = ANALYZE_PHASES.find(p => pct <= p.max);
+  return (phase || ANALYZE_PHASES[ANALYZE_PHASES.length - 1]).label;
+}
+
+function setAnalyzeProgress(pct) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  loadingProgressFill.style.width = `${clamped}%`;
+  loadingProgressLabel.textContent = `${clamped} %`;
+  loadingSub.textContent = analyzePhaseLabel(clamped);
+}
+
+function pollAnalyzeJob(jobId) {
+  return new Promise((resolve, reject) => {
+    const tick = async () => {
+      let res, data;
+      try {
+        res = await fetch(`/api/analyze/status/${jobId}`);
+        data = await res.json();
+      } catch {
+        reject(new Error('Connexion perdue pendant l’analyse.'));
+        return;
+      }
+      if (!res.ok) {
+        reject(new Error(data.error ?? `Erreur ${res.status}`));
+        return;
+      }
+      setAnalyzeProgress(data.progress ?? 0);
+      if (data.status === 'done') {
+        resolve(data);
+      } else if (data.status === 'error') {
+        reject(new Error(data.error ?? 'Analyse échouée.'));
+      } else {
+        setTimeout(tick, ANALYZE_POLL_MS);
+      }
+    };
+    tick();
+  });
+}
+
 async function performAnalyze(fetchPromise) {
+  setAnalyzeProgress(0);
   try {
     const res = await fetchPromise;
     const text = await res.text();
@@ -141,7 +200,9 @@ async function performAnalyze(fetchPromise) {
       throw new Error(`Erreur serveur (${res.status}) :\n${clean}`);
     }
     if (!res.ok) throw new Error(data.error ?? `Erreur ${res.status}`);
-    applyResults(data);
+    if (!data.job_id) throw new Error('Réponse inattendue du serveur.');
+    const result = await pollAnalyzeJob(data.job_id);
+    applyResults(result);
   } catch (err) {
     alert(`Erreur : ${err.message}`);
     showScreen('upload');

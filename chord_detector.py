@@ -400,7 +400,7 @@ def detect_chords(
     try:
         y, sr = librosa.load(load_path, sr=22050, mono=True)
         duration = float(len(y) / sr)
-        cb(15)
+        cb(10)
 
         if os.environ.get('ENABLE_METER_DETECTION'):
             # detect_meter (RNN+HMM madmom) pousse la RAM à plus de 1,5 Go
@@ -420,15 +420,15 @@ def detect_chords(
             tempo_bpm = _estimate_tempo(y, sr, hop_length)
             beats_per_bar = 4
             bar_times = _uniform_bar_times(tempo_bpm, duration)
-        cb(50)
+        cb(45)
 
         # Chroma « profond » (CNN pré-entraîné madmom), utilisé à la fois
         # pour la détection d'accords et la détection de tonalité.
         chroma = DeepChromaProcessor()(load_path)  # (n_frames, 12)
-        cb(80)
+        cb(50)
 
         key_en, key_fr = detect_key(chroma.T)
-        cb(88)
+        cb(55)
 
         if os.environ.get('ENABLE_LARGEVOCAB_CHORDS'):
             # Modèle ISMIR 2019 à grand vocabulaire (torch, sous-processus)

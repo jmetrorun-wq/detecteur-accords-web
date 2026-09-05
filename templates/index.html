@@ -65,7 +65,13 @@
     <div class="loading-center">
       <div class="spinner"></div>
       <p class="loading-title">Analyse en cours…</p>
-      <p class="loading-sub">Détection des accords + tonalité</p>
+      <p id="loading-sub" class="loading-sub">Préparation…</p>
+      <div class="loading-progress-wrap">
+        <div class="loading-progress-bar">
+          <div id="loading-progress-fill" class="loading-progress-fill"></div>
+        </div>
+        <span id="loading-progress-label" class="loading-progress-label">0 %</span>
+      </div>
       <p id="loading-filename" class="loading-file"></p>
     </div>
   </section>

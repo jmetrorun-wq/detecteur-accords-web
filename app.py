@@ -12,7 +12,7 @@ from typing import Optional
 
 import yt_dlp
 from flask import Flask, request, jsonify, send_file, render_template, make_response
-from chord_detector import detect_chords, detect_structure, chord_color, chord_type_name
+import analyze_jobs
 from pdf_export import build_chord_chart_pdf
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
@@ -144,52 +144,32 @@ def index():
     return resp
 
 
-def _analyze_and_respond(filepath: str, file_id: str, extra: Optional[dict] = None):
-    """Lance detect_chords() sur filepath et construit la réponse JSON."""
+def _start_analyze_job(filepath: str, file_id: str, extra: Optional[dict] = None):
+    """Démarre l'analyse en tâche de fond (cf. analyze_jobs.py) et renvoie
+    la réponse HTTP `{job_id}` que le frontend utilise pour suivre la
+    progression via /api/analyze/status/<job_id>. L'ancienne route
+    renvoyait directement le résultat complet en bloquant 1 à 4 minutes
+    (aucun retour de progression possible sur un aller-retour HTTP
+    unique) ; même pattern que /api/separate (job + polling)."""
     try:
-        chords, duration, key_en, key_fr, tempo, beats_per_bar, bar_times = detect_chords(filepath)
-    except Exception as exc:
-        try:
-            os.unlink(filepath)
-        except OSError:
-            pass
-        return jsonify({'error': f'Erreur d\'analyse : {exc}'}), 500
+        job_id = analyze_jobs.start_job(filepath, file_id, extra)
+    except RuntimeError as exc:
+        return jsonify({'error': str(exc)}), 409
+    return jsonify({'job_id': job_id})
 
-    chords_out = [
-        {
-            'time':   round(c['time'], 3),
-            'end':    round(c['end'], 3),
-            'chord':  c['chord'],
-            'color':  chord_color(c['chord']),
-            'type':   chord_type_name(c['chord']),
-        }
-        for c in chords
-    ]
 
-    structure = detect_structure(chords, bar_times, duration)
-    structure_out = [
-        {
-            'label': s['label'],
-            'start': round(s['start'], 3),
-            'end':   round(s['end'], 3),
-        }
-        for s in structure
-    ]
+@app.route('/api/analyze/status/<job_id>')
+def analyze_status(job_id):
+    job = analyze_jobs.get_status(job_id)
+    if not job:
+        return jsonify({'error': 'Job introuvable.'}), 404
 
-    payload = {
-        'file_id':       file_id,
-        'duration':      round(duration, 2),
-        'key_en':        key_en,
-        'key_fr':        key_fr,
-        'tempo':         round(float(tempo)),
-        'beats_per_bar': beats_per_bar,
-        'bar_times':     [round(t, 3) for t in bar_times],
-        'chords':        chords_out,
-        'structure':     structure_out,
-    }
-    if extra:
-        payload.update(extra)
-    return jsonify(payload)
+    out = {'status': job['status'], 'progress': job['progress']}
+    if job['status'] == 'error':
+        out['error'] = job['error']
+    if job['status'] == 'done':
+        out.update(job['result'])
+    return jsonify(out)
 
 
 @app.route('/api/analyze', methods=['POST'])
@@ -204,7 +184,7 @@ def analyze():
         filepath = os.path.join(UPLOAD_DIR, safe_id)
         if not safe_id.startswith('sep_') or not os.path.exists(filepath):
             return jsonify({'error': 'Fichier introuvable.'}), 400
-        return _analyze_and_respond(filepath, safe_id)
+        return _start_analyze_job(filepath, safe_id)
 
     if 'audio' not in request.files:
         return jsonify({'error': 'Aucun fichier audio reçu.'}), 400
@@ -258,7 +238,7 @@ def analyze():
     else:
         file_id += ext
 
-    return _analyze_and_respond(filepath, file_id)
+    return _start_analyze_job(filepath, file_id)
 
 
 @app.route('/api/analyze-youtube', methods=['POST'])
@@ -328,7 +308,7 @@ def analyze_youtube():
         return jsonify({'error': f'Téléchargement échoué : {exc}'}), 500
 
     file_id_ext = file_id + '.wav'
-    return _analyze_and_respond(
+    return _start_analyze_job(
         os.path.join(UPLOAD_DIR, file_id_ext),
         file_id_ext,
         {'title': info.get('title', '')},
