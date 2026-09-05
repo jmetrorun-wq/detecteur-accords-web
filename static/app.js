@@ -641,6 +641,7 @@ btnExportPdf.addEventListener('click', async () => {
         duration:  state.duration,
         chords:    currentChords(),
         structure: state.structure,
+        bar_times: state.barTimes,
       }),
     });
     if (!res.ok) {
