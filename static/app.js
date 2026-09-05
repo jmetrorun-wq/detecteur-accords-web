@@ -180,6 +180,25 @@ function pollAnalyzeJob(jobId) {
   });
 }
 
+// Pont natif : dans l'app mobile (Expo, coquille react-native-webview,
+// cf. mobile/App.js), l'enregistrement micro est capturé et uploadé
+// nativement (expo-audio, meilleure qualité qu'un MediaRecorder web, et
+// valeur native attendue pour la revue App Store) — mais l'affichage du
+// résultat reste entièrement celui du web. Le natif appelle juste ceci
+// avec le job_id renvoyé par /api/analyze pour réutiliser tel quel le
+// suivi de progression et l'affichage des résultats déjà en place.
+window.chordSplitNative = {
+  showAnalyzeJob(jobId) {
+    loadingFilename.textContent = 'Enregistrement micro';
+    showScreen('loading');
+    setAnalyzeProgress(0);
+    pollAnalyzeJob(jobId).then(applyResults).catch((err) => {
+      alert(`Erreur : ${err.message}`);
+      showScreen('upload');
+    });
+  },
+};
+
 async function performAnalyze(fetchPromise) {
   setAnalyzeProgress(0);
   try {
