@@ -52,7 +52,17 @@
           "microphonePermission": "ChordSplit utilise le micro pour identifier les accords d'un morceau capté autour de toi."
         }
       ],
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-share-intent",
+        {
+          "iosActivationRules": {
+            "NSExtensionActivationSupportsFileWithMaxCount": 1
+          },
+          "androidIntentFilters": ["audio/*"],
+          "iosAppGroupIdentifier": "group.fr.chordsplit.app"
+        }
+      ]
     ],
     "extra": {
       "eas": {

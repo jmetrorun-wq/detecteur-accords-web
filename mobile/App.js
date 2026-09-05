@@ -18,10 +18,12 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
 } from 'expo-audio';
+import { getDocumentAsync } from 'expo-document-picker';
+import { useShareIntent } from 'expo-share-intent';
 
 // App web ChordSplit (Flask sur Cloud Run). L'app iOS/Android n'est pour
-// l'instant qu'une coquille autour de cette WebView ; le reste du natif
-// (import de fichier, lecture en arrière-plan, onglets) viendra ensuite —
+// l'instant qu'une coquille autour de cette WebView ; la lecture en
+// arrière-plan et la coquille (onglets/Réglages) viendront ensuite —
 // cf. la checklist Phase 4.
 const APP_URL = 'https://detecteur-accords-web-xh56p7tdsa-ew.a.run.app';
 
@@ -63,6 +65,60 @@ export default function App() {
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(audioRecorder);
 
+  // Import de fichier — deux voies natives, toutes deux réutilisent le
+  // même upload direct vers /api/analyze puis le pont
+  // window.chordSplitNative.showAnalyzeJob (cf. finishRecording ci-dessous) :
+  //  1. sélecteur de fichiers natif (bouton 📂, expo-document-picker) ;
+  //  2. Share Extension iOS/Android (« Ouvrir dans ChordSplit » depuis
+  //     Fichiers, Dictaphone, une autre app — expo-share-intent). Répond à
+  //     la Guideline 4.2 (valeur native) au même titre que le micro.
+  //     Nécessite un build EAS (dev client/preview/production) : le
+  //     module natif de la Share Extension n'existe pas dans Expo Go.
+  const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntent();
+
+  const uploadAndShowResult = useCallback(async (uri, name, mimeType) => {
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append('audio', { uri, name, type: mimeType || 'application/octet-stream' });
+      const res = await fetch(`${APP_URL}/api/analyze`, { method: 'POST', body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
+      webRef.current?.injectJavaScript(
+        `window.chordSplitNative && window.chordSplitNative.showAnalyzeJob(${JSON.stringify(data.job_id)}); true;`
+      );
+    } catch (err) {
+      Alert.alert('Analyse impossible', err.message);
+    } finally {
+      setUploading(false);
+    }
+  }, []);
+
+  const pickAndAnalyzeFile = useCallback(async () => {
+    let result;
+    try {
+      result = await getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
+    } catch (err) {
+      Alert.alert('Erreur', err.message);
+      return;
+    }
+    if (result.canceled) return;
+    const asset = result.assets?.[0];
+    if (!asset) return;
+    uploadAndShowResult(asset.uri, asset.name, asset.mimeType);
+  }, [uploadAndShowResult]);
+
+  // Réception d'un fichier partagé depuis une autre app (Share Extension).
+  useEffect(() => {
+    if (!hasShareIntent) return;
+    const file = shareIntent?.files?.[0];
+    if (file) {
+      uploadAndShowResult(file.path, file.fileName, file.mimeType);
+    }
+    resetShareIntent();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasShareIntent]);
+
   const reload = useCallback(() => {
     setErrored(false);
     setLoading(true);
@@ -93,22 +149,8 @@ export default function App() {
       Alert.alert('Analyse impossible', 'Enregistrement introuvable.');
       return;
     }
-    setUploading(true);
-    try {
-      const form = new FormData();
-      form.append('audio', { uri, name: 'recording.m4a', type: 'audio/m4a' });
-      const res = await fetch(`${APP_URL}/api/analyze`, { method: 'POST', body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
-      webRef.current?.injectJavaScript(
-        `window.chordSplitNative && window.chordSplitNative.showAnalyzeJob(${JSON.stringify(data.job_id)}); true;`
-      );
-    } catch (err) {
-      Alert.alert('Analyse impossible', err.message);
-    } finally {
-      setUploading(false);
-    }
-  }, [audioRecorder, recorderState.isRecording]);
+    uploadAndShowResult(uri, 'recording.m4a', 'audio/m4a');
+  }, [audioRecorder, recorderState.isRecording, uploadAndShowResult]);
 
   const stopAndAnalyze = useCallback(() => finishRecording(true), [finishRecording]);
   const cancelRecording = useCallback(() => finishRecording(false), [finishRecording]);
@@ -182,14 +224,24 @@ export default function App() {
           )}
 
           {!recorderState.isRecording && !uploading && (
-            <Pressable
-              style={styles.recordFab}
-              onPress={startRecording}
-              accessibilityRole="button"
-              accessibilityLabel="Enregistrer un morceau au micro"
-            >
-              <Text style={styles.recordFabIcon}>🎙️</Text>
-            </Pressable>
+            <>
+              <Pressable
+                style={styles.recordFab}
+                onPress={startRecording}
+                accessibilityRole="button"
+                accessibilityLabel="Enregistrer un morceau au micro"
+              >
+                <Text style={styles.recordFabIcon}>🎙️</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.recordFab, styles.importFab]}
+                onPress={pickAndAnalyzeFile}
+                accessibilityRole="button"
+                accessibilityLabel="Importer un fichier audio"
+              >
+                <Text style={styles.recordFabIcon}>📂</Text>
+              </Pressable>
+            </>
           )}
 
           {(recorderState.isRecording || uploading) && (
@@ -198,7 +250,7 @@ export default function App() {
                 {uploading ? (
                   <>
                     <ActivityIndicator size="large" color="#1A56DB" />
-                    <Text style={styles.recordTitle}>Envoi de l'enregistrement…</Text>
+                    <Text style={styles.recordTitle}>Envoi en cours…</Text>
                   </>
                 ) : (
                   <>
@@ -273,6 +325,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   recordFabIcon: { fontSize: 26 },
+  importFab: { bottom: 96 },
   recordOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(10,12,16,0.55)',
