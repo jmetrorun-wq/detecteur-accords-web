@@ -143,6 +143,10 @@ function drawGuitar(svgEl, labelEl, chord) {
   const stringY = i => PAD_T + i * sh;     // i = 0 -> Mi grave en haut
   const nutX = PAD_L + W;                  // sillet à DROITE
   const fretX = f => nutX - f * fw;        // les frettes s'éloignent vers la gauche
+  // Frette de la 1re case dessinée : `start` pour un accord haut sur le
+  // manche, 1 pour un accord ouvert (les données mettent `start:0` dans
+  // ce cas — sans ce max, les doigts glissent d'une case vers la gauche).
+  const winStart = Math.max(1, start);
 
   // Fond + bois du manche
   svgEl.appendChild(mk('rect', { x: 0, y: 0, width: GUITAR_VB_W, height: GUITAR_VB_H, fill: '#1A1A2E', rx: 8 }));
@@ -170,7 +174,7 @@ function drawGuitar(svgEl, labelEl, chord) {
 
   // Barré : rectangle vertical à la frette du barré
   if (barre > 0) {
-    const bx = fretX(barre - start + 0.5);
+    const bx = fretX(barre - winStart + 0.5);
     svgEl.appendChild(mk('rect', { x: bx - 7, y: PAD_T - 4, width: 14, height: H + 8, rx: 7, fill: '#1A56DB', opacity: '0.85' }));
   }
 
@@ -185,7 +189,7 @@ function drawGuitar(svgEl, labelEl, chord) {
     } else if (fret === 0) {
       svgEl.appendChild(mk('circle', { cx: nutX + 15, cy: y, r: 4.5, fill: 'none', stroke: '#AAAACC', 'stroke-width': 1.5 }));
     } else {
-      const relFret = fret - start + 1;
+      const relFret = fret - winStart + 1;
       const cx = fretX(relFret - 0.5);
       const isBarreNote = barre > 0 && fret === barre;
       svgEl.appendChild(mk('circle', { cx, cy: y, r: 8, fill: isBarreNote ? '#4FC3F7' : '#EDEDF2' }));
