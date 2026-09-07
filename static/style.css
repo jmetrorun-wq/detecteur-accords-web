@@ -762,11 +762,57 @@ html, body {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 2rem 1.5rem;
+  padding: 1.5rem 1.5rem;
   gap: 0.4rem;
 }
+
+/* Tête de guitare 3+3 : deux colonnes de mécaniques autour d'un manche */
+.tuner-headstock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 10px;
+  margin-bottom: 1rem;
+  background: #201C30;
+  border: 1px solid var(--border);
+  border-radius: 18px 18px 26px 26px;
+}
+.peg-col { display: flex; flex-direction: column; gap: 0.55rem; }
+.headstock-neck {
+  width: 30px;
+  align-self: stretch;
+  margin: 4px 0;
+  background: linear-gradient(180deg, #3A3552, #2A2540);
+  border-radius: 3px 3px 12px 12px;
+}
+.peg {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 46px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.peg small { font-size: 0.62rem; color: var(--text-dim); font-weight: 600; margin-top: 2px; }
+.peg:active { opacity: 0.8; }
+.peg-col-left .peg  { border-radius: 12px 3px 3px 12px; border-right: none; }
+.peg-col-right .peg { border-radius: 3px 12px 12px 3px; border-left: none; }
+.peg.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+.peg.active small { color: var(--bg); }
+
 .tuner-note {
-  font-size: clamp(4.5rem, 26vw, 8rem);
+  font-size: clamp(3rem, 16vw, 4.5rem);
   font-weight: 800;
   line-height: 1;
   letter-spacing: -0.02em;

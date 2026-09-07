@@ -1,41 +1,43 @@
 /**
- * Accordeur chromatique — détecte la hauteur d'une note jouée seule via
- * le micro (autocorrélation sur le signal temporel), la ramène à la note
- * tempérée la plus proche (La 4 = 440 Hz) et donne l'écart en cents.
+ * Accordeur guitare — accordage standard (Mi La Ré Sol Si Mi).
  *
- * Distinct de la détection d'accords (chroma multi-notes) : ici on veut
- * une fondamentale unique, précise, rafraîchie ~60×/s.
+ * Deux usages combinés :
+ *  - toucher une mécanique joue le son de référence de la corde
+ *    correspondante (accordage à l'oreille) ;
+ *  - le micro détecte la hauteur jouée (fonction de différence normalisée
+ *    cumulée, cœur de l'algo YIN — robuste aux harmoniques) et l'aiguille
+ *    affiche l'écart en cents PAR RAPPORT à la corde active (verrouillée
+ *    par un tap, sinon la plus proche automatiquement).
  */
 function createTuner({ onUpdate, onError } = {}) {
-  const A4 = 440;
-  const NOTES_EN = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-  const NOTES_FR = ['Do','Do♯','Ré','Ré♯','Mi','Fa','Fa♯','Sol','Sol♯','La','La♯','Si'];
-  const FMIN = 55;    // La 1 — sous une corde de basse
-  const FMAX = 1600;  // au-dessus de la case 12 d'un aigu de guitare
+  // Fréquences de l'accordage standard (La 4 = 440 Hz).
+  const STRINGS = [
+    { fr: 'Mi', octave: 2, hz: 82.41 },   // 6e corde (grave)
+    { fr: 'La', octave: 2, hz: 110.00 },  // 5e
+    { fr: 'Ré', octave: 3, hz: 146.83 },  // 4e
+    { fr: 'Sol', octave: 3, hz: 196.00 }, // 3e
+    { fr: 'Si', octave: 3, hz: 246.94 },  // 2e
+    { fr: 'Mi', octave: 4, hz: 329.63 },  // 1re (aiguë)
+  ];
+  const FMIN = 55;
+  const FMAX = 1600;
+  const YIN_THRESHOLD = 0.12;
 
   let ac = null, analyser = null, source = null, stream = null;
   let rafId = null, buf = null;
-  let smoothHz = 0;        // lissage exponentiel de la fréquence
-  let lastVoiceMs = 0;
-
-  // Détection de hauteur par la fonction de différence normalisée
-  // cumulée (cœur de l'algo YIN) : bien plus robuste aux harmoniques
-  // qu'une simple autocorrélation — important pour un accordeur (un
-  // instrument réel est riche en harmoniques). Renvoie la fréquence en
-  // Hz, ou -1 si le signal est trop faible / non périodique.
-  const YIN_THRESHOLD = 0.12;
+  let smoothHz = 0, lastVoiceMs = 0;
+  let manualIdx = null;   // corde verrouillée par un tap ; null = auto (plus proche)
 
   function detectPitch(x, sr) {
     const N = x.length;
     let rms = 0;
     for (let i = 0; i < N; i++) rms += x[i] * x[i];
     rms = Math.sqrt(rms / N);
-    if (rms < 0.008) return -1;   // trop silencieux
+    if (rms < 0.008) return -1;
 
     const tauMax = Math.min(N >> 1, Math.ceil(sr / FMIN));
     const tauMin = Math.max(2, Math.floor(sr / FMAX));
 
-    // d(tau) = somme des carrés des différences décalées de tau
     const d = new Float32Array(tauMax + 1);
     for (let tau = tauMin; tau <= tauMax; tau++) {
       let s = 0;
@@ -46,7 +48,6 @@ function createTuner({ onUpdate, onError } = {}) {
       d[tau] = s;
     }
 
-    // Normalisation cumulée : d'(tau) = d(tau) * tau / somme(d[1..tau])
     const dn = new Float32Array(tauMax + 1);
     let running = 0;
     dn[0] = 1;
@@ -55,7 +56,6 @@ function createTuner({ onUpdate, onError } = {}) {
       dn[tau] = running > 0 ? d[tau] * (tau - tauMin + 1) / running : 1;
     }
 
-    // 1er tau sous le seuil, en le laissant descendre jusqu'à son minimum local.
     let tau = -1;
     for (let t = tauMin + 1; t < tauMax; t++) {
       if (dn[t] < YIN_THRESHOLD) {
@@ -64,7 +64,6 @@ function createTuner({ onUpdate, onError } = {}) {
         break;
       }
     }
-    // Repli : minimum global si rien ne passe le seuil.
     if (tau === -1) {
       let best = Infinity;
       for (let t = tauMin + 1; t < tauMax; t++) {
@@ -73,10 +72,8 @@ function createTuner({ onUpdate, onError } = {}) {
       if (tau === -1 || best > 0.5) return -1;
     }
 
-    // Interpolation parabolique autour du minimum, sur la fonction de
-    // différence BRUTE d[] (pas la version normalisée cumulée dn[], dont
-    // la forme locale est biaisée par le terme cumulatif → décalage
-    // systématique de la période interpolée).
+    // Interpolation parabolique sur la différence BRUTE d[] (la version
+    // normalisée dn[] biaise la période interpolée).
     let T = tau;
     if (tau > tauMin && tau < tauMax) {
       const y1 = d[tau - 1], y2 = d[tau], y3 = d[tau + 1];
@@ -91,6 +88,30 @@ function createTuner({ onUpdate, onError } = {}) {
     return (f >= FMIN && f <= FMAX) ? f : -1;
   }
 
+  function nearestString(hz) {
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < STRINGS.length; i++) {
+      const dist = Math.abs(1200 * Math.log2(hz / STRINGS[i].hz));
+      if (dist < bd) { bd = dist; best = i; }
+    }
+    return best;
+  }
+
+  function emit(idx, hz) {
+    const s = STRINGS[idx];
+    const rawCents = hz > 0 ? 1200 * Math.log2(hz / s.hz) : null;
+    onUpdate && onUpdate({
+      stringIdx: idx,
+      noteFr: s.fr,
+      octave: s.octave,
+      targetHz: s.hz,
+      frequency: hz > 0 ? hz : 0,
+      hasPitch: hz > 0,
+      cents: rawCents == null ? 0 : Math.max(-50, Math.min(50, Math.round(rawCents))),
+      inTune: rawCents != null && Math.abs(rawCents) <= 5,
+    });
+  }
+
   function loop() {
     analyser.getFloatTimeDomainData(buf);
     const f = detectPitch(buf, ac.sampleRate);
@@ -99,23 +120,10 @@ function createTuner({ onUpdate, onError } = {}) {
     if (f > 0) {
       smoothHz = smoothHz ? smoothHz * 0.8 + f * 0.2 : f;
       lastVoiceMs = now;
-      const midi = 69 + 12 * Math.log2(smoothHz / A4);
-      const nearest = Math.round(midi);
-      const cents = Math.round((midi - nearest) * 100);
-      const pc = ((nearest % 12) + 12) % 12;
-      const target = A4 * Math.pow(2, (nearest - 69) / 12);
-      onUpdate && onUpdate({
-        note: NOTES_EN[pc],
-        noteFr: NOTES_FR[pc],
-        octave: Math.floor(nearest / 12) - 1,
-        cents: Math.max(-50, Math.min(50, cents)),
-        frequency: smoothHz,
-        targetHz: target,
-        inTune: Math.abs(cents) <= 5,
-      });
+      emit(manualIdx != null ? manualIdx : nearestString(smoothHz), smoothHz);
     } else if (now - lastVoiceMs > 250) {
       smoothHz = 0;
-      onUpdate && onUpdate(null);
+      emit(manualIdx != null ? manualIdx : 0, 0);
     }
     rafId = requestAnimationFrame(loop);
   }
@@ -123,6 +131,11 @@ function createTuner({ onUpdate, onError } = {}) {
   return {
     async start() {
       if (ac) return;
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      if (!Ctor) { onError && onError(new Error('Web Audio indisponible')); return; }
+      ac = new Ctor();
+      if (ac.state === 'suspended') { try { await ac.resume(); } catch {} }
+      // Le micro peut échouer (refus) sans empêcher les tons de référence.
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
@@ -131,11 +144,8 @@ function createTuner({ onUpdate, onError } = {}) {
         onError && onError(err);
         return;
       }
-      const Ctor = window.AudioContext || window.webkitAudioContext;
-      ac = new Ctor();
-      if (ac.state === 'suspended') await ac.resume();
       analyser = ac.createAnalyser();
-      analyser.fftSize = 4096;   // ~85 ms à 48 kHz : assez pour les cordes graves
+      analyser.fftSize = 4096;
       buf = new Float32Array(analyser.fftSize);
       source = ac.createMediaStreamSource(stream);
       source.connect(analyser);
@@ -148,8 +158,41 @@ function createTuner({ onUpdate, onError } = {}) {
       if (source) { try { source.disconnect(); } catch {} source = null; }
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
       if (ac) { try { ac.close(); } catch {} ac = null; }
-      analyser = null; buf = null; smoothHz = 0;
+      analyser = null; buf = null; smoothHz = 0; manualIdx = null;
     },
+    // Joue ~1,8 s le son de la corde `idx` (fondamentale + 2 harmoniques)
+    // et verrouille l'aiguille sur cette corde.
+    playString(idx) {
+      if (!ac) return;
+      if (ac.state === 'suspended') ac.resume();
+      manualIdx = idx;
+      const s = STRINGS[idx];
+      const t0 = ac.currentTime;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(0.4, t0 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.8);
+      g.connect(ac.destination);
+      [[1, 0.6], [2, 0.14], [3, 0.05]].forEach(([mult, amp]) => {
+        const o = ac.createOscillator();
+        o.type = 'sine';
+        o.frequency.value = s.hz * mult;
+        const og = ac.createGain();
+        og.gain.value = amp;
+        o.connect(og).connect(g);
+        o.start(t0);
+        o.stop(t0 + 1.9);
+      });
+      emit(idx, smoothHz || 0);
+    },
+    // Verrouille (idx) ou repasse en auto (null).
+    setTarget(idx) {
+      manualIdx = idx;
+      const active = idx != null ? idx : (smoothHz ? nearestString(smoothHz) : 0);
+      emit(active, smoothHz || 0);
+    },
+    get manualIdx() { return manualIdx; },
     get running() { return !!ac; },
+    get strings() { return STRINGS.slice(); },
   };
 }

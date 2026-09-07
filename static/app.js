@@ -718,27 +718,64 @@ btnMetronomeBack.addEventListener('click', () => {
   showScreen('upload');
 });
 
-// ── Accordeur chromatique ─────────────────────────────────────────
+// ── Accordeur guitare (tête de guitare + tons de référence + micro) ─
 const tuner = createTuner({ onUpdate: onTunerUpdate, onError: onTunerError });
+const tunerHeadstock = document.getElementById('tuner-headstock');
+
+// Colonnes de mécaniques d'une tête 3+3 : gauche = cordes 0,1,2 (Mi La
+// Ré) ; droite haut→bas = 5,4,3 (Mi aigu, Si, Sol).
+const PEG_COLS = [[0, 1, 2], [5, 4, 3]];
+
+function buildHeadstock() {
+  const strings = tuner.strings;
+  tunerHeadstock.innerHTML = '';
+  PEG_COLS.forEach((col, ci) => {
+    const colEl = document.createElement('div');
+    colEl.className = 'peg-col peg-col-' + (ci === 0 ? 'left' : 'right');
+    col.forEach((idx) => {
+      const s = strings[idx];
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'peg';
+      btn.dataset.idx = idx;
+      btn.innerHTML = `<span>${s.fr}</span><small>${s.octave}</small>`;
+      btn.addEventListener('click', () => {
+        tuner.playString(idx);
+        markActivePeg(idx);
+      });
+      colEl.appendChild(btn);
+    });
+    if (ci === 0) {
+      const neck = document.createElement('div');
+      neck.className = 'headstock-neck';
+      tunerHeadstock.appendChild(colEl);
+      tunerHeadstock.appendChild(neck);
+    } else {
+      tunerHeadstock.appendChild(colEl);
+    }
+  });
+}
+
+function markActivePeg(idx) {
+  tunerHeadstock.querySelectorAll('.peg').forEach((p) => {
+    p.classList.toggle('active', Number(p.dataset.idx) === idx);
+  });
+}
 
 function onTunerUpdate(d) {
-  if (!d) {
-    tunerNote.textContent = '–';
-    tunerNote.className = 'tuner-note';
-    tunerDetail.textContent = 'Joue une note';
-    tunerNeedle.className = 'tuner-needle';
-    tunerStatus.textContent = 'Joue une corde à vide…';
-    tunerStatus.classList.remove('in-tune');
-    return;
-  }
-  const cls = d.inTune ? 'in-tune' : 'off';
-  tunerNote.innerHTML = `${d.note}<sub style="font-size:0.4em;color:var(--text-dim)">${d.octave}</sub>`;
+  if (!d) return;
+  markActivePeg(d.stringIdx);
+  const cls = d.hasPitch ? (d.inTune ? 'in-tune' : 'off') : '';
+  tunerNote.innerHTML = `${d.noteFr}<sub style="font-size:0.4em;color:var(--text-dim)">${d.octave}</sub>`;
   tunerNote.className = 'tuner-note ' + cls;
-  tunerDetail.textContent = `${d.noteFr} · ${d.frequency.toFixed(1)} Hz  (cible ${d.targetHz.toFixed(1)} Hz)`;
-  tunerNeedle.className = 'tuner-needle on' + (d.inTune ? ' in-tune' : '');
-  tunerNeedle.style.left = `${50 + d.cents}%`;
-  tunerStatus.classList.toggle('in-tune', d.inTune);
-  tunerStatus.textContent = d.inTune ? 'Juste ✓'
+  tunerDetail.textContent = d.hasPitch
+    ? `cible ${d.targetHz.toFixed(1)} Hz · ${d.frequency.toFixed(1)} Hz`
+    : `cible ${d.targetHz.toFixed(1)} Hz`;
+  tunerNeedle.className = 'tuner-needle' + (d.hasPitch ? ' on' : '') + (d.hasPitch && d.inTune ? ' in-tune' : '');
+  if (d.hasPitch) tunerNeedle.style.left = `${50 + d.cents}%`;
+  tunerStatus.classList.toggle('in-tune', d.hasPitch && d.inTune);
+  tunerStatus.textContent = !d.hasPitch ? `Joue la corde ${d.noteFr}`
+    : d.inTune ? 'Juste ✓'
     : d.cents < 0 ? `Trop bas  ▼ ${Math.abs(d.cents)} cents`
     : `Trop haut  ▲ ${d.cents} cents`;
 }
@@ -746,13 +783,19 @@ function onTunerUpdate(d) {
 function onTunerError(err) {
   tunerError.classList.remove('hidden');
   tunerError.textContent = (err && err.name === 'NotAllowedError')
-    ? "Accès au micro refusé. Autorise le micro dans les réglages du navigateur pour utiliser l'accordeur."
-    : `Micro indisponible : ${err ? err.message : 'erreur inconnue'}`;
+    ? "Micro refusé — les sons de référence fonctionnent quand même. Autorise le micro pour l'aiguille."
+    : `Micro indisponible : ${err ? err.message : 'erreur inconnue'} — sons de référence toujours actifs.`;
 }
 
 async function openTuner() {
   tunerError.classList.add('hidden');
-  onTunerUpdate(null);
+  buildHeadstock();
+  tunerNote.textContent = '–';
+  tunerNote.className = 'tuner-note';
+  tunerNeedle.className = 'tuner-needle';
+  tunerDetail.textContent = 'Touche une mécanique';
+  tunerStatus.textContent = 'Touche une mécanique pour entendre la corde';
+  tunerStatus.classList.remove('in-tune');
   showScreen('tuner');
   await tuner.start();
 }
