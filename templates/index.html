@@ -117,10 +117,13 @@
     </header>
     <div class="metronome-center">
       <div id="hm-dots" class="metro-dots metro-dots-big"></div>
-      <div class="metro-tempo metro-tempo-big">
-        <button type="button" id="hm-tempo-down" class="btn-small" aria-label="Ralentir">−</button>
-        <button type="button" id="hm-tempo-val" class="metro-tempo-val" title="Revenir à 120 BPM"><span id="hm-bpm">120</span> BPM</button>
-        <button type="button" id="hm-tempo-up" class="btn-small" aria-label="Accélérer">+</button>
+      <div class="metro-wheelbox">
+        <button type="button" id="hm-bpm-btn" class="metro-bpm-btn metro-bpm-btn-big" title="Revenir à 120 BPM">
+          <span id="hm-bpm">120</span><span class="metro-bpm-unit">BPM</span>
+        </button>
+        <div id="hm-wheel" class="metro-wheel metro-wheel-big" role="slider" aria-label="Tempo" aria-valuemin="40" aria-valuemax="240" aria-valuenow="120" tabindex="0">
+          <div class="metro-wheel-tape"></div>
+        </div>
       </div>
       <select id="hm-sig" class="metro-sig metro-sig-big" aria-label="Mesure">
         <option value="2">2/4</option>
@@ -173,13 +176,16 @@
     <!-- Métronome autonome (tempo détecté, sans lien avec la lecture) -->
     <div id="metronome-panel" class="metronome-panel hidden">
       <div id="metro-dots" class="metro-dots"></div>
+      <div class="metro-wheelbox">
+        <button type="button" id="metro-bpm-btn" class="metro-bpm-btn" title="Revenir au tempo détecté">
+          <span id="metro-bpm">120</span><span class="metro-bpm-unit">BPM</span>
+        </button>
+        <div id="metro-wheel" class="metro-wheel" role="slider" aria-label="Tempo" aria-valuemin="40" aria-valuemax="240" aria-valuenow="120" tabindex="0">
+          <div class="metro-wheel-tape"></div>
+        </div>
+      </div>
       <div class="metro-controls">
         <button type="button" id="metro-play" class="metro-play" aria-label="Démarrer / arrêter">▶</button>
-        <div class="metro-tempo">
-          <button type="button" id="metro-tempo-down" class="btn-small" aria-label="Ralentir">−</button>
-          <button type="button" id="metro-tempo-val" class="metro-tempo-val" title="Revenir au tempo détecté"><span id="metro-bpm">120</span> BPM</button>
-          <button type="button" id="metro-tempo-up" class="btn-small" aria-label="Accélérer">+</button>
-        </div>
         <select id="metro-sig" class="metro-sig" aria-label="Mesure">
           <option value="2">2/4</option>
           <option value="3">3/4</option>

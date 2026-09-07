@@ -84,18 +84,16 @@ const btnMetronome    = document.getElementById('btn-metronome');
 const metronomePanel  = document.getElementById('metronome-panel');
 const metroPlay       = document.getElementById('metro-play');
 const metroBpm        = document.getElementById('metro-bpm');
-const metroTempoVal    = document.getElementById('metro-tempo-val');
-const metroTempoDown   = document.getElementById('metro-tempo-down');
-const metroTempoUp     = document.getElementById('metro-tempo-up');
+const metroBpmBtn     = document.getElementById('metro-bpm-btn');
+const metroWheel      = document.getElementById('metro-wheel');
 const metroDots       = document.getElementById('metro-dots');
 const metroSig        = document.getElementById('metro-sig');
 const btnMetronomeHome = document.getElementById('btn-metronome-home');
 const btnMetronomeBack = document.getElementById('btn-metronome-back');
 const hmPlay          = document.getElementById('hm-play');
 const hmBpm           = document.getElementById('hm-bpm');
-const hmTempoVal      = document.getElementById('hm-tempo-val');
-const hmTempoDown     = document.getElementById('hm-tempo-down');
-const hmTempoUp       = document.getElementById('hm-tempo-up');
+const hmBpmBtn        = document.getElementById('hm-bpm-btn');
+const hmWheel         = document.getElementById('hm-wheel');
 const hmDots          = document.getElementById('hm-dots');
 const hmSig           = document.getElementById('hm-sig');
 
@@ -655,9 +653,12 @@ instrumentPanes.addEventListener('touchend', (e) => {
 // avec le lecteur : outil d'entraînement. Deux instances, même moteur
 // (static/metronome.js) : le panneau de l'écran résultats (pré-réglé
 // sur le tempo détecté) et l'écran plein dédié accessible de l'accueil.
-function makeMetronomeUI({ playBtn, bpmEl, dotsEl, downBtn, upBtn, valBtn, sigEl, indicator, resetTempo }) {
+const WHEEL_PX_PER_BPM = 4;   // sensibilité de la molette (px de glissement par BPM)
+
+function makeMetronomeUI({ playBtn, bpmEl, dotsEl, wheelEl, bpmBtn, sigEl, indicator, resetTempo }) {
   const metro = createMetronome({ onBeat });
   const sigValues = sigEl ? [...sigEl.options].map(o => Number(o.value)) : null;
+  const tapeEl = wheelEl ? wheelEl.querySelector('.metro-wheel-tape') : null;
 
   function renderDots(n) {
     dotsEl.innerHTML = '';
@@ -676,7 +677,12 @@ function makeMetronomeUI({ playBtn, bpmEl, dotsEl, downBtn, upBtn, valBtn, sigEl
     if (indicator) indicator.classList.toggle('running', on);
     if (!on) onBeat(-1);
   }
-  function setTempo(bpm) { bpmEl.textContent = String(metro.setTempo(bpm)); }
+  function setTempo(bpm) {
+    const v = metro.setTempo(bpm);
+    bpmEl.textContent = String(v);
+    if (wheelEl) wheelEl.setAttribute('aria-valuenow', String(v));
+    return v;
+  }
   function applyBeats(n) {
     metro.setBeatsPerBar(n);
     renderDots(n);
@@ -685,18 +691,43 @@ function makeMetronomeUI({ playBtn, bpmEl, dotsEl, downBtn, upBtn, valBtn, sigEl
   function reset(tempo, beatsPerBar) {
     metro.stop();
     setPlaying(false);
-    // Si la mesure détectée n'est pas dans la liste du sélecteur, on
-    // retombe sur 4/4.
     const n = (sigValues && !sigValues.includes(beatsPerBar)) ? 4 : beatsPerBar;
     applyBeats(n);
     setTempo(tempo);
   }
 
   playBtn.addEventListener('click', () => { metro.toggle(); setPlaying(metro.running); });
-  downBtn.addEventListener('click', () => setTempo(metro.tempo - 1));
-  upBtn.addEventListener('click',   () => setTempo(metro.tempo + 1));
-  if (valBtn && resetTempo) valBtn.addEventListener('click', () => setTempo(resetTempo()));
+  if (bpmBtn && resetTempo) bpmBtn.addEventListener('click', () => setTempo(resetTempo()));
   if (sigEl) sigEl.addEventListener('change', () => applyBeats(Number(sigEl.value)));
+
+  // Molette : glissement horizontal → tempo (droite = plus vite). La
+  // bande crantée suit le doigt en continu, la valeur est quantifiée.
+  if (wheelEl) {
+    let wStartX = 0, wStartBpm = 0, wDrag = false;
+    const wrap = WHEEL_PX_PER_BPM * 12;   // repli visuel de la bande
+    wheelEl.addEventListener('pointerdown', (e) => {
+      wDrag = true; wStartX = e.clientX; wStartBpm = metro.tempo;
+      try { wheelEl.setPointerCapture(e.pointerId); } catch {}
+    });
+    wheelEl.addEventListener('pointermove', (e) => {
+      if (!wDrag) return;
+      const dx = e.clientX - wStartX;
+      setTempo(wStartBpm + Math.round(dx / WHEEL_PX_PER_BPM));
+      if (tapeEl) tapeEl.style.transform = `translateX(${((dx % wrap) + wrap) % wrap - wrap / 2}px)`;
+    });
+    const end = (e) => {
+      if (!wDrag) return;
+      wDrag = false;
+      try { wheelEl.releasePointerCapture(e.pointerId); } catch {}
+      if (tapeEl) tapeEl.style.transform = 'translateX(0)';
+    };
+    wheelEl.addEventListener('pointerup', end);
+    wheelEl.addEventListener('pointercancel', end);
+    wheelEl.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { setTempo(metro.tempo + 1); e.preventDefault(); }
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { setTempo(metro.tempo - 1); e.preventDefault(); }
+    });
+  }
 
   return { metro, reset, setPlaying };
 }
@@ -704,7 +735,7 @@ function makeMetronomeUI({ playBtn, bpmEl, dotsEl, downBtn, upBtn, valBtn, sigEl
 // Panneau sur l'écran résultats (pré-réglé sur le tempo/mesure détectés)
 const resultsMetro = makeMetronomeUI({
   playBtn: metroPlay, bpmEl: metroBpm, dotsEl: metroDots,
-  downBtn: metroTempoDown, upBtn: metroTempoUp, valBtn: metroTempoVal, sigEl: metroSig,
+  wheelEl: metroWheel, bpmBtn: metroBpmBtn, sigEl: metroSig,
   indicator: btnMetronome, resetTempo: () => state.tempo || 120,
 });
 function resetMetronome() {
@@ -716,7 +747,7 @@ btnMetronome.addEventListener('click', () => metronomePanel.classList.toggle('hi
 // Écran plein dédié, accessible de l'accueil (tempo par défaut 120)
 const homeMetro = makeMetronomeUI({
   playBtn: hmPlay, bpmEl: hmBpm, dotsEl: hmDots,
-  downBtn: hmTempoDown, upBtn: hmTempoUp, valBtn: hmTempoVal, sigEl: hmSig,
+  wheelEl: hmWheel, bpmBtn: hmBpmBtn, sigEl: hmSig,
   resetTempo: () => 120,
 });
 btnMetronomeHome.addEventListener('click', () => {
