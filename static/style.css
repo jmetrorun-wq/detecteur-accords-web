@@ -380,6 +380,34 @@ html, body {
   min-height: 1.2em;
 }
 
+/* Instrument : sélecteur segmenté Piano | Guitare */
+.instrument { flex-shrink: 0; padding: 0.5rem 0.75rem 0; }
+.instrument-toggle {
+  display: flex;
+  gap: 2px;
+  width: max-content;
+  margin: 0 auto 0.4rem;
+  padding: 2px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.instrument-tab {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.3rem 1.15rem;
+  border-radius: 7px;
+  cursor: pointer;
+  min-height: 32px;
+}
+.instrument-tab.active { background: var(--accent); color: var(--bg); }
+.instrument-panes { touch-action: pan-y; }
+.instrument-panes .piano-wrap,
+.instrument-panes .guitar-wrap { padding-top: 0; }
+
 /* Piano : une octave zoomée sur l'accord joué */
 .piano-wrap {
   flex-shrink: 0;
@@ -401,12 +429,13 @@ html, body {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: center;
+  gap: 0.75rem;
   padding: 0.4rem 0.75rem;
 }
 .guitar-svg {
-  width: 80px;
-  height: 107px;
+  width: 108px;
+  height: 144px;
   flex-shrink: 0;
 }
 .guitar-label {

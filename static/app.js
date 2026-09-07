@@ -13,6 +13,7 @@ const state = {
   activeIdx: -1,       // index de l'accord en cours (segment précis)
   beatCells: [],      // [{start, end, chord, color, showName, barStart}, ...] une par temps
   activeCellIdx: -1,
+  instrument: 'piano', // 'piano' | 'guitar' — vue affichée (sélecteur + swipe)
 };
 
 // ── DOM ────────────────────────────────────────────────────────────
@@ -44,8 +45,13 @@ const infoTempo       = document.getElementById('info-tempo');
 const currentChord    = document.getElementById('current-chord');
 const currentType     = document.getElementById('current-type');
 const pianoCanvas     = document.getElementById('piano-canvas');
+const pianoWrap       = document.querySelector('.piano-wrap');
+const guitarWrap      = document.getElementById('guitar-wrap');
 const guitarSvg       = document.getElementById('guitar-svg');
 const guitarLabel     = document.getElementById('guitar-label');
+const instrumentPanes = document.getElementById('instrument-panes');
+const tabPiano        = document.getElementById('tab-piano');
+const tabGuitar       = document.getElementById('tab-guitar');
 const btnPlay         = document.getElementById('btn-play');
 const seekBar         = document.getElementById('seek-bar');
 const timeCurrent     = document.getElementById('time-current');
@@ -413,6 +419,7 @@ function applyResults(data) {
   renderHeader();
   resetSeparatePanel();
   showScreen('results');   // visible d'abord : renderBeatStrip mesure la géométrie des cases
+  setInstrument(state.instrument, false);  // applique la vue mémorisée + dimensionne le canvas
   renderBeatStrip();
   updateAt(0);
 }
@@ -548,12 +555,72 @@ function updateChordAt(time) {
   currentChord.style.color  = chordColor;
   currentType.textContent   = chordTypeTxt;
 
-  // Piano
-  drawPiano(pianoCanvas, chordName !== '—' ? chordName : null);
-
-  // Guitare
-  drawGuitar(guitarSvg, guitarLabel, chordName !== '—' ? chordName : null);
+  // Seul l'instrument affiché est redessiné (l'autre est masqué et sera
+  // rafraîchi au moment de la bascule, cf. redrawInstrument).
+  drawInstrument(chordName !== '—' ? chordName : null);
 }
+
+// ── Bascule piano / guitare (sélecteur + swipe, choix mémorisé) ────
+function drawInstrument(chordName) {
+  if (state.instrument === 'guitar') {
+    drawGuitar(guitarSvg, guitarLabel, chordName);
+  } else {
+    drawPiano(pianoCanvas, chordName);
+  }
+}
+
+// Redessine l'instrument visible pour l'accord courant (après une
+// bascule / un resize : le canvas piano mesuré caché aurait une largeur
+// nulle, il faut le redessiner une fois visible).
+function redrawInstrument() {
+  const chords = currentChords();
+  const c = state.activeIdx >= 0 && state.activeIdx < chords.length ? chords[state.activeIdx] : null;
+  drawInstrument(c ? c.chord : null);
+}
+
+function loadInstrumentPref() {
+  try {
+    return localStorage.getItem('chordsplit.instrument') === 'guitar' ? 'guitar' : 'piano';
+  } catch { return 'piano'; }
+}
+
+function setInstrument(inst, remember = true) {
+  state.instrument = inst === 'guitar' ? 'guitar' : 'piano';
+  const isPiano = state.instrument === 'piano';
+  tabPiano.classList.toggle('active', isPiano);
+  tabGuitar.classList.toggle('active', !isPiano);
+  tabPiano.setAttribute('aria-selected', String(isPiano));
+  tabGuitar.setAttribute('aria-selected', String(!isPiano));
+  pianoWrap.classList.toggle('hidden', !isPiano);
+  guitarWrap.classList.toggle('hidden', isPiano);
+  if (remember) {
+    try { localStorage.setItem('chordsplit.instrument', state.instrument); } catch {}
+  }
+  redrawInstrument();
+}
+
+tabPiano.addEventListener('click',  () => setInstrument('piano'));
+tabGuitar.addEventListener('click', () => setInstrument('guitar'));
+
+// Swipe horizontal sur la zone instrument pour basculer. On décide au
+// touchend (pas de preventDefault) : un geste franchement horizontal et
+// au-delà du seuil bascule, sinon on laisse filer le scroll vertical.
+let instTouchX = 0, instTouchY = 0, instTouchActive = false;
+instrumentPanes.addEventListener('touchstart', (e) => {
+  if (e.touches.length !== 1) { instTouchActive = false; return; }
+  instTouchX = e.touches[0].clientX;
+  instTouchY = e.touches[0].clientY;
+  instTouchActive = true;
+}, { passive: true });
+instrumentPanes.addEventListener('touchend', (e) => {
+  if (!instTouchActive) return;
+  instTouchActive = false;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - instTouchX;
+  const dy = t.clientY - instTouchY;
+  if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.8) return;
+  setInstrument(dx < 0 ? 'guitar' : 'piano');
+}, { passive: true });
 
 // Barre défilante : surligne la case du temps en cours et fait glisser
 // la bande pour garder la lecture centrée. Le défilement est piloté
@@ -822,6 +889,7 @@ window.addEventListener('resize', () => {
   resizeTimer = setTimeout(() => {
     if (screens.results.classList.contains('active')) {
       state.cellW = 0;  // la largeur de case (et le padding 46vw) dépend de la largeur d'écran
+      redrawInstrument();  // le canvas piano dépend de sa largeur affichée
       updateChordAt(audioEl.currentTime);
       updateBeatStripAt(audioEl.currentTime);
     }
@@ -919,4 +987,5 @@ async function deleteHistoryEntry(id, itemEl) {
 }
 
 // ── Init ───────────────────────────────────────────────────────────
+state.instrument = loadInstrumentPref();
 showScreen('upload');

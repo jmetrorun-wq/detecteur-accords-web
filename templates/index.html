@@ -120,15 +120,21 @@
       <div id="current-type" class="current-type"></div>
     </div>
 
-    <!-- Piano : une octave zoomée sur l'accord joué -->
-    <div class="piano-wrap">
-      <canvas id="piano-canvas" class="piano-canvas"></canvas>
-    </div>
-
-    <!-- Diagramme guitare -->
-    <div id="guitar-wrap" class="guitar-wrap">
-      <svg id="guitar-svg" class="guitar-svg" viewBox="0 0 120 160" xmlns="http://www.w3.org/2000/svg"></svg>
-      <div id="guitar-label" class="guitar-label"></div>
+    <!-- Instrument : piano OU diagramme guitare (sélecteur + swipe) -->
+    <div class="instrument">
+      <div class="instrument-toggle" role="tablist" aria-label="Instrument">
+        <button type="button" id="tab-piano" class="instrument-tab active" role="tab" aria-selected="true">Piano</button>
+        <button type="button" id="tab-guitar" class="instrument-tab" role="tab" aria-selected="false">Guitare</button>
+      </div>
+      <div id="instrument-panes" class="instrument-panes">
+        <div class="piano-wrap" data-inst="piano">
+          <canvas id="piano-canvas" class="piano-canvas"></canvas>
+        </div>
+        <div id="guitar-wrap" class="guitar-wrap hidden" data-inst="guitar">
+          <svg id="guitar-svg" class="guitar-svg" viewBox="0 0 120 160" xmlns="http://www.w3.org/2000/svg"></svg>
+          <div id="guitar-label" class="guitar-label"></div>
+        </div>
+      </div>
     </div>
 
     <!-- Lecteur audio -->
