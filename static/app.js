@@ -24,6 +24,7 @@ const screens = {
   results:  document.getElementById('screen-results'),
   history:  document.getElementById('screen-history'),
   tuner:    document.getElementById('screen-tuner'),
+  metronome: document.getElementById('screen-metronome'),
 };
 const btnHistory      = document.getElementById('btn-history');
 const btnHistoryBack  = document.getElementById('btn-history-back');
@@ -87,6 +88,14 @@ const metroTempoVal    = document.getElementById('metro-tempo-val');
 const metroTempoDown   = document.getElementById('metro-tempo-down');
 const metroTempoUp     = document.getElementById('metro-tempo-up');
 const metroDots       = document.getElementById('metro-dots');
+const btnMetronomeHome = document.getElementById('btn-metronome-home');
+const btnMetronomeBack = document.getElementById('btn-metronome-back');
+const hmPlay          = document.getElementById('hm-play');
+const hmBpm           = document.getElementById('hm-bpm');
+const hmTempoVal      = document.getElementById('hm-tempo-val');
+const hmTempoDown     = document.getElementById('hm-tempo-down');
+const hmTempoUp       = document.getElementById('hm-tempo-up');
+const hmDots          = document.getElementById('hm-dots');
 
 // ── Utilitaires ────────────────────────────────────────────────────
 function showScreen(name) {
@@ -640,53 +649,74 @@ instrumentPanes.addEventListener('touchend', (e) => {
 }, { passive: true });
 
 // ── Métronome autonome ────────────────────────────────────────────
-// Clic au tempo détecté (ajustable), accent sur le 1er temps de la
-// mesure. Sans lien avec le lecteur : outil d'entraînement.
-const metronome = createMetronome({ onBeat: onMetroBeat });
+// Clic au tempo voulu, accent sur le 1er temps de la mesure. Sans lien
+// avec le lecteur : outil d'entraînement. Deux instances, même moteur
+// (static/metronome.js) : le panneau de l'écran résultats (pré-réglé
+// sur le tempo détecté) et l'écran plein dédié accessible de l'accueil.
+function makeMetronomeUI({ playBtn, bpmEl, dotsEl, downBtn, upBtn, valBtn, indicator, resetTempo }) {
+  const metro = createMetronome({ onBeat });
 
-function renderMetroDots(n) {
-  metroDots.innerHTML = '';
-  for (let i = 0; i < n; i++) {
-    const d = document.createElement('span');
-    d.className = 'metro-dot' + (i === 0 ? ' accent' : '');
-    metroDots.appendChild(d);
+  function renderDots(n) {
+    dotsEl.innerHTML = '';
+    for (let i = 0; i < n; i++) {
+      const d = document.createElement('span');
+      d.className = 'metro-dot' + (i === 0 ? ' accent' : '');
+      dotsEl.appendChild(d);
+    }
   }
+  function onBeat(b) {
+    const dots = dotsEl.children;
+    for (let i = 0; i < dots.length; i++) dots[i].classList.toggle('on', i === b);
+  }
+  function setPlaying(on) {
+    playBtn.textContent = on ? '⏸' : '▶';
+    if (indicator) indicator.classList.toggle('running', on);
+    if (!on) onBeat(-1);
+  }
+  function setTempo(bpm) { bpmEl.textContent = String(metro.setTempo(bpm)); }
+  function reset(tempo, beatsPerBar) {
+    metro.stop();
+    setPlaying(false);
+    metro.setBeatsPerBar(beatsPerBar);
+    renderDots(beatsPerBar);
+    setTempo(tempo);
+  }
+
+  playBtn.addEventListener('click', () => { metro.toggle(); setPlaying(metro.running); });
+  downBtn.addEventListener('click', () => setTempo(metro.tempo - 1));
+  upBtn.addEventListener('click',   () => setTempo(metro.tempo + 1));
+  if (valBtn && resetTempo) valBtn.addEventListener('click', () => setTempo(resetTempo()));
+
+  return { metro, reset, setPlaying };
 }
 
-function onMetroBeat(b) {
-  const dots = metroDots.children;
-  for (let i = 0; i < dots.length; i++) dots[i].classList.toggle('on', i === b);
-}
-
-function setMetroPlaying(on) {
-  metroPlay.textContent = on ? '⏸' : '▶';
-  btnMetronome.classList.toggle('running', on);
-  if (!on) onMetroBeat(-1);
-}
-
-function setMetroTempo(bpm) {
-  metroBpm.textContent = String(metronome.setTempo(bpm));
-}
-
+// Panneau sur l'écran résultats (pré-réglé sur le tempo/mesure détectés)
+const resultsMetro = makeMetronomeUI({
+  playBtn: metroPlay, bpmEl: metroBpm, dotsEl: metroDots,
+  downBtn: metroTempoDown, upBtn: metroTempoUp, valBtn: metroTempoVal,
+  indicator: btnMetronome, resetTempo: () => state.tempo || 120,
+});
 function resetMetronome() {
-  metronome.stop();
-  setMetroPlaying(false);
   metronomePanel.classList.add('hidden');
-  metronome.setBeatsPerBar(state.beatsPerBar || 4);
-  renderMetroDots(state.beatsPerBar || 4);
-  setMetroTempo(state.tempo || 120);
+  resultsMetro.reset(state.tempo || 120, state.beatsPerBar || 4);
 }
+btnMetronome.addEventListener('click', () => metronomePanel.classList.toggle('hidden'));
 
-btnMetronome.addEventListener('click', () => {
-  metronomePanel.classList.toggle('hidden');
+// Écran plein dédié, accessible de l'accueil (tempo par défaut 120)
+const homeMetro = makeMetronomeUI({
+  playBtn: hmPlay, bpmEl: hmBpm, dotsEl: hmDots,
+  downBtn: hmTempoDown, upBtn: hmTempoUp, valBtn: hmTempoVal,
+  resetTempo: () => 120,
 });
-metroPlay.addEventListener('click', () => {
-  metronome.toggle();
-  setMetroPlaying(metronome.running);
+btnMetronomeHome.addEventListener('click', () => {
+  homeMetro.reset(120, 4);
+  showScreen('metronome');
 });
-metroTempoDown.addEventListener('click', () => setMetroTempo(metronome.tempo - 1));
-metroTempoUp.addEventListener('click',   () => setMetroTempo(metronome.tempo + 1));
-metroTempoVal.addEventListener('click',  () => setMetroTempo(state.tempo || 120));
+btnMetronomeBack.addEventListener('click', () => {
+  homeMetro.metro.stop();
+  homeMetro.setPlaying(false);
+  showScreen('upload');
+});
 
 // ── Accordeur chromatique ─────────────────────────────────────────
 const tuner = createTuner({ onUpdate: onTunerUpdate, onError: onTunerError });

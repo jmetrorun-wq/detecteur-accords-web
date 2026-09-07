@@ -44,6 +44,11 @@
         Accordeur
       </button>
 
+      <button type="button" id="btn-metronome-home" class="btn-secondary">
+        <span class="btn-icon">⏱</span>
+        Métronome
+      </button>
+
       <p class="format-hint">MP3 · M4A · WAV · FLAC · OGG · AAC · AIFF · WMA</p>
 
       <div class="upload-divider">ou</div>
@@ -100,6 +105,23 @@
       </div>
       <div id="tuner-status" class="tuner-status">Joue une corde à vide…</div>
       <div id="tuner-error" class="tuner-error hidden"></div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════ ÉCRAN MÉTRONOME ════════════════════ -->
+  <section id="screen-metronome" class="screen">
+    <header class="results-header">
+      <button id="btn-metronome-back" class="btn-icon-only" title="Retour">←</button>
+      <div class="header-info"><strong>Métronome</strong></div>
+    </header>
+    <div class="metronome-center">
+      <div id="hm-dots" class="metro-dots metro-dots-big"></div>
+      <div class="metro-tempo metro-tempo-big">
+        <button type="button" id="hm-tempo-down" class="btn-small" aria-label="Ralentir">−</button>
+        <button type="button" id="hm-tempo-val" class="metro-tempo-val" title="Revenir à 120 BPM"><span id="hm-bpm">120</span> BPM</button>
+        <button type="button" id="hm-tempo-up" class="btn-small" aria-label="Accélérer">+</button>
+      </div>
+      <button type="button" id="hm-play" class="metro-play metro-play-big" aria-label="Démarrer / arrêter">▶</button>
     </div>
   </section>
 

@@ -563,6 +563,32 @@ html, body {
 }
 .metro-dot.accent.on { background: var(--lh-color); border-color: var(--lh-color); }
 
+/* Métronome — écran plein dédié (accessible de l'accueil) */
+.metronome-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
+  padding: 2rem 1.5rem;
+}
+.metro-dots-big { gap: 0.7rem; }
+.metro-dots-big .metro-dot { width: 18px; height: 18px; }
+.metro-dots-big .metro-dot.accent { width: 22px; height: 22px; }
+.metro-tempo-big { gap: 0.75rem; }
+.metro-tempo-big .metro-tempo-val { font-size: 1.3rem; min-width: 108px; }
+.metro-tempo-big .btn-small {
+  font-size: 1.3rem;
+  min-width: 44px;
+  min-height: 44px;
+}
+.metro-play-big {
+  width: 76px;
+  height: 76px;
+  font-size: 1.6rem;
+}
+
 /* Barre défilante — une case par temps, façon Chordify (nom d'accord
    affiché seulement quand il change, case vide = accord tenu ; barre de
    mesure au début de chaque mesure). */
