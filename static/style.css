@@ -521,7 +521,8 @@ html, body {
   flex-wrap: wrap;
 }
 
-/* Molette de tempo : bande crantée à faire glisser (repère au centre) */
+/* Molette de tempo : roue verticale style picker iOS (valeur au centre,
+   accroche au défilement, fondu haut/bas). */
 .metro-wheelbox {
   display: flex;
   flex-direction: column;
@@ -542,53 +543,54 @@ html, body {
 .metro-bpm-btn > span:first-child { font-size: 1.5rem; font-weight: 800; }
 .metro-bpm-btn-big > span:first-child { font-size: 2rem; }
 .metro-bpm-unit { font-size: 0.7rem; color: var(--text-dim); font-weight: 600; letter-spacing: 0.04em; }
-.metro-wheel {
+
+.metro-picker {
+  --item-h: 34px;
+  --rows: 5;
   position: relative;
-  width: 232px;
-  max-width: 80vw;
-  height: 40px;
+  width: 120px;
+  height: calc(var(--item-h) * var(--rows));
+  overflow-y: scroll;
+  overflow-x: hidden;
+  scroll-snap-type: y mandatory;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--surface2);
-  overflow: hidden;
-  cursor: ew-resize;
-  touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 30%, #000 70%, transparent);
+          mask-image: linear-gradient(180deg, transparent, #000 30%, #000 70%, transparent);
+  touch-action: pan-y;
 }
-.metro-wheel-big { width: 300px; height: 52px; }
-.metro-wheel-tape {
-  position: absolute;
-  top: 0; bottom: 0;
-  left: -100%;
-  width: 300%;
-  background-image:
-    repeating-linear-gradient(90deg, var(--border) 0 1px, transparent 1px 11px),
-    repeating-linear-gradient(90deg, var(--text-dim) 0 2px, transparent 2px 55px);
-  background-position: center;
-  will-change: transform;
+.metro-picker::-webkit-scrollbar { display: none; }
+.metro-picker:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.metro-picker-list { padding: calc(var(--item-h) * (var(--rows) - 1) / 2) 0; }
+.metro-picker-item {
+  height: var(--item-h);
+  line-height: var(--item-h);
+  text-align: center;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  scroll-snap-align: center;
+  transition: color 0.1s, font-size 0.1s;
 }
-.metro-wheel::after {
-  content: '';
+.metro-picker-item.sel { color: var(--text); font-weight: 800; font-size: 1.3rem; }
+.metro-picker-band {
   position: absolute;
-  left: 50%;
-  top: 5px; bottom: 5px;
-  width: 3px;
-  background: var(--accent);
-  border-radius: 2px;
-  transform: translateX(-50%);
-  z-index: 1;
-}
-.metro-wheel::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 1;
+  left: 6px; right: 6px;
+  top: 50%;
+  height: var(--item-h);
+  transform: translateY(-50%);
+  border-top: 1px solid var(--accent);
+  border-bottom: 1px solid var(--accent);
+  background: rgba(79, 195, 247, 0.09);
+  border-radius: 6px;
   pointer-events: none;
-  border-radius: 10px;
-  background: linear-gradient(90deg, var(--surface), transparent 18%, transparent 82%, var(--surface));
 }
-.metro-wheel:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.metro-picker--compact { --rows: 3; }
+.metro-picker-big { --item-h: 40px; --rows: 5; width: 150px; }
 .metro-sig {
   background: var(--surface2);
   border: 1px solid var(--border);

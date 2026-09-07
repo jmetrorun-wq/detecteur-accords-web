@@ -121,8 +121,9 @@
         <button type="button" id="hm-bpm-btn" class="metro-bpm-btn metro-bpm-btn-big" title="Revenir à 120 BPM">
           <span id="hm-bpm">120</span><span class="metro-bpm-unit">BPM</span>
         </button>
-        <div id="hm-wheel" class="metro-wheel metro-wheel-big" role="slider" aria-label="Tempo" aria-valuemin="40" aria-valuemax="240" aria-valuenow="120" tabindex="0">
-          <div class="metro-wheel-tape"></div>
+        <div id="hm-picker" class="metro-picker metro-picker-big" role="slider" aria-label="Tempo" aria-valuemin="40" aria-valuemax="240" aria-valuenow="120" tabindex="0">
+          <div class="metro-picker-list"></div>
+          <div class="metro-picker-band" aria-hidden="true"></div>
         </div>
       </div>
       <select id="hm-sig" class="metro-sig metro-sig-big" aria-label="Mesure">
@@ -180,8 +181,9 @@
         <button type="button" id="metro-bpm-btn" class="metro-bpm-btn" title="Revenir au tempo détecté">
           <span id="metro-bpm">120</span><span class="metro-bpm-unit">BPM</span>
         </button>
-        <div id="metro-wheel" class="metro-wheel" role="slider" aria-label="Tempo" aria-valuemin="40" aria-valuemax="240" aria-valuenow="120" tabindex="0">
-          <div class="metro-wheel-tape"></div>
+        <div id="metro-picker" class="metro-picker metro-picker--compact" role="slider" aria-label="Tempo" aria-valuemin="40" aria-valuemax="240" aria-valuenow="120" tabindex="0">
+          <div class="metro-picker-list"></div>
+          <div class="metro-picker-band" aria-hidden="true"></div>
         </div>
       </div>
       <div class="metro-controls">

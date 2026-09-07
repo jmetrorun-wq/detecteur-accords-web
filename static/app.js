@@ -85,7 +85,7 @@ const metronomePanel  = document.getElementById('metronome-panel');
 const metroPlay       = document.getElementById('metro-play');
 const metroBpm        = document.getElementById('metro-bpm');
 const metroBpmBtn     = document.getElementById('metro-bpm-btn');
-const metroWheel      = document.getElementById('metro-wheel');
+const metroPicker     = document.getElementById('metro-picker');
 const metroDots       = document.getElementById('metro-dots');
 const metroSig        = document.getElementById('metro-sig');
 const btnMetronomeHome = document.getElementById('btn-metronome-home');
@@ -93,7 +93,7 @@ const btnMetronomeBack = document.getElementById('btn-metronome-back');
 const hmPlay          = document.getElementById('hm-play');
 const hmBpm           = document.getElementById('hm-bpm');
 const hmBpmBtn        = document.getElementById('hm-bpm-btn');
-const hmWheel         = document.getElementById('hm-wheel');
+const hmPicker        = document.getElementById('hm-picker');
 const hmDots          = document.getElementById('hm-dots');
 const hmSig           = document.getElementById('hm-sig');
 
@@ -653,12 +653,12 @@ instrumentPanes.addEventListener('touchend', (e) => {
 // avec le lecteur : outil d'entraînement. Deux instances, même moteur
 // (static/metronome.js) : le panneau de l'écran résultats (pré-réglé
 // sur le tempo détecté) et l'écran plein dédié accessible de l'accueil.
-const WHEEL_PX_PER_BPM = 4;   // sensibilité de la molette (px de glissement par BPM)
+const PICKER_MIN = 40, PICKER_MAX = 240;   // plage de tempo de la molette
 
-function makeMetronomeUI({ playBtn, bpmEl, dotsEl, wheelEl, bpmBtn, sigEl, indicator, resetTempo }) {
+function makeMetronomeUI({ playBtn, bpmEl, dotsEl, pickerEl, bpmBtn, sigEl, indicator, resetTempo }) {
   const metro = createMetronome({ onBeat });
   const sigValues = sigEl ? [...sigEl.options].map(o => Number(o.value)) : null;
-  const tapeEl = wheelEl ? wheelEl.querySelector('.metro-wheel-tape') : null;
+  const pickerList = pickerEl ? pickerEl.querySelector('.metro-picker-list') : null;
 
   function renderDots(n) {
     dotsEl.innerHTML = '';
@@ -677,10 +677,30 @@ function makeMetronomeUI({ playBtn, bpmEl, dotsEl, wheelEl, bpmBtn, sigEl, indic
     if (indicator) indicator.classList.toggle('running', on);
     if (!on) onBeat(-1);
   }
-  function setTempo(bpm) {
+  // ── Molette de tempo : roue verticale style picker iOS ────────────
+  let suppressScroll = false;   // évite la boucle setTempo → scrollTop → scroll
+  function itemH() {
+    return parseFloat(getComputedStyle(pickerEl).getPropertyValue('--item-h')) || 34;
+  }
+  function markSel(v) {
+    if (!pickerList) return;
+    const idx = v - PICKER_MIN;
+    const items = pickerList.children;
+    for (let i = 0; i < items.length; i++) items[i].classList.toggle('sel', i === idx);
+  }
+  function syncPicker(v) {
+    if (!pickerEl) return;
+    suppressScroll = true;
+    pickerEl.scrollTop = (v - PICKER_MIN) * itemH();
+    markSel(v);
+    requestAnimationFrame(() => requestAnimationFrame(() => { suppressScroll = false; }));
+  }
+
+  function setTempo(bpm, moveWheel = true) {
     const v = metro.setTempo(bpm);
     bpmEl.textContent = String(v);
-    if (wheelEl) wheelEl.setAttribute('aria-valuenow', String(v));
+    if (pickerEl) pickerEl.setAttribute('aria-valuenow', String(v));
+    if (moveWheel) syncPicker(v); else markSel(v);
     return v;
   }
   function applyBeats(n) {
@@ -700,59 +720,60 @@ function makeMetronomeUI({ playBtn, bpmEl, dotsEl, wheelEl, bpmBtn, sigEl, indic
   if (bpmBtn && resetTempo) bpmBtn.addEventListener('click', () => setTempo(resetTempo()));
   if (sigEl) sigEl.addEventListener('change', () => applyBeats(Number(sigEl.value)));
 
-  // Molette : glissement horizontal → tempo (droite = plus vite). La
-  // bande crantée suit le doigt en continu, la valeur est quantifiée.
-  if (wheelEl) {
-    let wStartX = 0, wStartBpm = 0, wDrag = false;
-    const wrap = WHEEL_PX_PER_BPM * 12;   // repli visuel de la bande
-    wheelEl.addEventListener('pointerdown', (e) => {
-      wDrag = true; wStartX = e.clientX; wStartBpm = metro.tempo;
-      try { wheelEl.setPointerCapture(e.pointerId); } catch {}
-    });
-    wheelEl.addEventListener('pointermove', (e) => {
-      if (!wDrag) return;
-      const dx = e.clientX - wStartX;
-      setTempo(wStartBpm + Math.round(dx / WHEEL_PX_PER_BPM));
-      if (tapeEl) tapeEl.style.transform = `translateX(${((dx % wrap) + wrap) % wrap - wrap / 2}px)`;
-    });
-    const end = (e) => {
-      if (!wDrag) return;
-      wDrag = false;
-      try { wheelEl.releasePointerCapture(e.pointerId); } catch {}
-      if (tapeEl) tapeEl.style.transform = 'translateX(0)';
-    };
-    wheelEl.addEventListener('pointerup', end);
-    wheelEl.addEventListener('pointercancel', end);
-    wheelEl.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { setTempo(metro.tempo + 1); e.preventDefault(); }
-      else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { setTempo(metro.tempo - 1); e.preventDefault(); }
+  if (pickerEl && pickerList) {
+    for (let v = PICKER_MIN; v <= PICKER_MAX; v++) {
+      const d = document.createElement('div');
+      d.className = 'metro-picker-item';
+      d.textContent = String(v);
+      d.addEventListener('click', () => setTempo(v));   // tap sur un chiffre
+      pickerList.appendChild(d);
+    }
+    pickerEl.addEventListener('scroll', () => {
+      if (suppressScroll) return;
+      const v = Math.max(PICKER_MIN, Math.min(PICKER_MAX,
+        PICKER_MIN + Math.round(pickerEl.scrollTop / itemH())));
+      if (v !== metro.tempo) setTempo(v, false);   // false : ne pas re-piloter le scroll
+      else markSel(v);
+    }, { passive: true });
+    pickerEl.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { setTempo(metro.tempo + 1); e.preventDefault(); }
+      else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { setTempo(metro.tempo - 1); e.preventDefault(); }
     });
   }
 
-  return { metro, reset, setPlaying };
+  // Recale le scroll de la molette sur la valeur courante (à appeler
+  // quand l'écran/panneau devient visible : scrollTop ne « prend » pas
+  // sur un élément masqué).
+  function refreshPicker() { syncPicker(metro.tempo); }
+
+  return { metro, reset, setPlaying, refreshPicker };
 }
 
 // Panneau sur l'écran résultats (pré-réglé sur le tempo/mesure détectés)
 const resultsMetro = makeMetronomeUI({
   playBtn: metroPlay, bpmEl: metroBpm, dotsEl: metroDots,
-  wheelEl: metroWheel, bpmBtn: metroBpmBtn, sigEl: metroSig,
+  pickerEl: metroPicker, bpmBtn: metroBpmBtn, sigEl: metroSig,
   indicator: btnMetronome, resetTempo: () => state.tempo || 120,
 });
 function resetMetronome() {
   metronomePanel.classList.add('hidden');
   resultsMetro.reset(state.tempo || 120, state.beatsPerBar || 4);
 }
-btnMetronome.addEventListener('click', () => metronomePanel.classList.toggle('hidden'));
+btnMetronome.addEventListener('click', () => {
+  const shown = metronomePanel.classList.toggle('hidden') === false;
+  if (shown) resultsMetro.refreshPicker();   // scrollTop ne prend qu'une fois visible
+});
 
 // Écran plein dédié, accessible de l'accueil (tempo par défaut 120)
 const homeMetro = makeMetronomeUI({
   playBtn: hmPlay, bpmEl: hmBpm, dotsEl: hmDots,
-  wheelEl: hmWheel, bpmBtn: hmBpmBtn, sigEl: hmSig,
+  pickerEl: hmPicker, bpmBtn: hmBpmBtn, sigEl: hmSig,
   resetTempo: () => 120,
 });
 btnMetronomeHome.addEventListener('click', () => {
   homeMetro.reset(120, 4);
   showScreen('metronome');
+  homeMetro.refreshPicker();
 });
 btnMetronomeBack.addEventListener('click', () => {
   homeMetro.metro.stop();
