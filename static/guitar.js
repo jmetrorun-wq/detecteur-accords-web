@@ -97,17 +97,26 @@ const GUITAR_CHORDS = {
 
 const GUITAR_SVG_NS = 'http://www.w3.org/2000/svg';
 
+// Diagramme horizontal : un bout de manche vu de côté. Cordes
+// horizontales (Mi grave EN HAUT, Mi aigu en bas), frettes verticales,
+// sillet à gauche. frets = [Mi grave, La, Ré, Sol, Si, Mi aigu].
+const GUITAR_VB_W = 264;
+const GUITAR_VB_H = 132;
+
 function drawGuitar(svgEl, labelEl, chord) {
-  // Vide le SVG
   while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
   if (labelEl) labelEl.textContent = '';
+  svgEl.setAttribute('viewBox', `0 0 ${GUITAR_VB_W} ${GUITAR_VB_H}`);
+
+  const mk = (tag, attrs) => {
+    const el = document.createElementNS(GUITAR_SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    return el;
+  };
 
   if (!chord || chord === 'N') {
-    const t = document.createElementNS(GUITAR_SVG_NS, 'text');
-    t.setAttribute('x', '60'); t.setAttribute('y', '80');
-    t.setAttribute('text-anchor', 'middle');
-    t.setAttribute('fill', '#555');
-    t.setAttribute('font-size', '14');
+    const t = mk('text', { x: GUITAR_VB_W / 2, y: GUITAR_VB_H / 2 + 5,
+      'text-anchor': 'middle', fill: '#555', 'font-size': '18' });
     t.textContent = '—';
     svgEl.appendChild(t);
     return;
@@ -115,84 +124,70 @@ function drawGuitar(svgEl, labelEl, chord) {
 
   const shape = GUITAR_CHORDS[chord];
   if (!shape) {
-    if (labelEl) labelEl.textContent = 'Diagramme\nnon disponible';
+    const t = mk('text', { x: GUITAR_VB_W / 2, y: GUITAR_VB_H / 2 + 4,
+      'text-anchor': 'middle', fill: '#888', 'font-size': '12' });
+    t.textContent = 'Diagramme non disponible';
+    svgEl.appendChild(t);
     return;
   }
 
   const { frets, start, barre } = shape;
-  const NUM_FRETS = 5;
-  const NUM_STRINGS = 6;
+  const NF = 5, NS = 6;
+  const PAD_L = 30, PAD_R = 14, PAD_T = 14, PAD_B = 14;
+  const W = GUITAR_VB_W - PAD_L - PAD_R;   // longueur du bout de manche
+  const H = GUITAR_VB_H - PAD_T - PAD_B;   // hauteur (6 cordes)
+  const sh = H / (NS - 1);                 // inter-corde
+  const fw = W / NF;                       // inter-frette
 
-  // Dimensions internes (viewBox 0 0 120 160)
-  const PAD_L = 22, PAD_T = 20, PAD_R = 8, PAD_B = 12;
-  const W = 120 - PAD_L - PAD_R;
-  const H = 160 - PAD_T - PAD_B;
-  const sw = W / (NUM_STRINGS - 1);   // inter-corde
-  const fh = H / NUM_FRETS;           // inter-frette
+  const stringY = i => PAD_T + i * sh;     // i = 0 -> Mi grave en haut
 
-  function mk(tag, attrs) {
-    const el = document.createElementNS(GUITAR_SVG_NS, tag);
-    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
-    return el;
+  // Fond + bois du manche
+  svgEl.appendChild(mk('rect', { x: 0, y: 0, width: GUITAR_VB_W, height: GUITAR_VB_H, fill: '#1A1A2E', rx: 8 }));
+  svgEl.appendChild(mk('rect', { x: PAD_L, y: PAD_T - 3, width: W, height: H + 6, fill: '#2A2540', rx: 2 }));
+
+  // Frettes verticales (sillet épais à gauche si on joue en bas du manche)
+  for (let f = 0; f <= NF; f++) {
+    const x = PAD_L + f * fw;
+    const isNut = f === 0 && start <= 1;
+    svgEl.appendChild(mk('line', { x1: x, y1: PAD_T - 2, x2: x, y2: PAD_T + H + 2,
+      stroke: isNut ? '#D8D8E8' : '#4A4A6A', 'stroke-width': isNut ? 4 : 1.5 }));
   }
-
-  // Fond
-  svgEl.appendChild(mk('rect', { x:0, y:0, width:120, height:160, fill:'#1A1A2E', rx:6 }));
-
-  // Sillet (nut) ou numéro de frette
-  if (start <= 1) {
-    svgEl.appendChild(mk('rect', { x: PAD_L, y: PAD_T - 4, width: W, height: 4, fill:'#AAAACC', rx:1 }));
-  } else {
-    const lbl = mk('text', { x: PAD_L - 4, y: PAD_T + fh * 0.6, 'text-anchor':'end', fill:'#AAAACC', 'font-size':'9' });
-    lbl.textContent = `${start}`;
+  if (start > 1) {
+    const lbl = mk('text', { x: PAD_L + fw / 2, y: PAD_T - 4, 'text-anchor': 'middle', fill: '#AAAACC', 'font-size': '9' });
+    lbl.textContent = String(start);
     svgEl.appendChild(lbl);
   }
 
-  // Frettes
-  for (let f = 0; f <= NUM_FRETS; f++) {
-    const y = PAD_T + f * fh;
-    svgEl.appendChild(mk('line', { x1: PAD_L, y1: y, x2: PAD_L + W, y2: y, stroke:'#333355', 'stroke-width':1 }));
+  // Cordes horizontales (plus épaisses vers le grave = index 0)
+  for (let s = 0; s < NS; s++) {
+    const y = stringY(s);
+    svgEl.appendChild(mk('line', { x1: PAD_L, y1: y, x2: PAD_L + W, y2: y,
+      stroke: '#8A8AB0', 'stroke-width': 0.7 + (NS - 1 - s) * 0.35 }));
   }
 
-  // Cordes
-  for (let s = 0; s < NUM_STRINGS; s++) {
-    const x = PAD_L + s * sw;
-    svgEl.appendChild(mk('line', { x1: x, y1: PAD_T, x2: x, y2: PAD_T + H, stroke:'#444466', 'stroke-width':1 }));
-  }
-
-  // Barré
+  // Barré : rectangle vertical à la frette du barré
   if (barre > 0) {
-    const by = PAD_T + (barre - start + 0.5) * fh;
-    svgEl.appendChild(mk('rect', {
-      x: PAD_L - 2, y: by - 7, width: W + 4, height: 14,
-      rx: 7, fill: '#1A56DB', opacity: '0.85'
-    }));
+    const bx = PAD_L + (barre - start + 0.5) * fw;
+    svgEl.appendChild(mk('rect', { x: bx - 7, y: PAD_T - 4, width: 14, height: H + 8, rx: 7, fill: '#1A56DB', opacity: '0.85' }));
   }
 
-  // Symboles O/X et points
-  for (let s = 0; s < NUM_STRINGS; s++) {
+  // O / X à gauche du sillet + doigts sur le manche
+  for (let s = 0; s < NS; s++) {
     const fret = frets[s];
-    const x = PAD_L + s * sw;
-
+    const y = stringY(s);
     if (fret === -1) {
-      // X : corde étouffée
-      const t = mk('text', { x, y: PAD_T - 6, 'text-anchor':'middle', fill:'#FF5555', 'font-size':'9' });
+      const t = mk('text', { x: PAD_L - 15, y: y + 4, 'text-anchor': 'middle', fill: '#FF5555', 'font-size': '11' });
       t.textContent = '✕';
       svgEl.appendChild(t);
     } else if (fret === 0) {
-      // O : corde à vide
-      svgEl.appendChild(mk('circle', { cx: x, cy: PAD_T - 7, r: 4, fill:'none', stroke:'#AAAACC', 'stroke-width':1.5 }));
+      svgEl.appendChild(mk('circle', { cx: PAD_L - 15, cy: y, r: 4.5, fill: 'none', stroke: '#AAAACC', 'stroke-width': 1.5 }));
     } else {
-      // Doigt
       const relFret = fret - start + 1;
-      const cy = PAD_T + (relFret - 0.5) * fh;
+      const cx = PAD_L + (relFret - 0.5) * fw;
       const isBarreNote = barre > 0 && fret === barre;
-      svgEl.appendChild(mk('circle', { cx: x, cy, r: 7, fill: isBarreNote ? '#4FC3F7' : '#AAAACC' }));
+      svgEl.appendChild(mk('circle', { cx, cy: y, r: 8, fill: isBarreNote ? '#4FC3F7' : '#EDEDF2' }));
     }
   }
 
-  if (labelEl) {
-    const root = chord.replace(/[^A-G#]/g, '');
-    labelEl.textContent = `Accord de\n${chord}`;
-  }
+  if (labelEl) labelEl.textContent = `Accord de ${chord}`;
 }
