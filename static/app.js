@@ -722,9 +722,10 @@ btnMetronomeBack.addEventListener('click', () => {
 const tuner = createTuner({ onUpdate: onTunerUpdate, onError: onTunerError });
 const tunerHeadstock = document.getElementById('tuner-headstock');
 
-// Colonnes de mécaniques d'une tête 3+3 : gauche = cordes 0,1,2 (Mi La
-// Ré) ; droite haut→bas = 5,4,3 (Mi aigu, Si, Sol).
-const PEG_COLS = [[0, 1, 2], [5, 4, 3]];
+// Colonnes de mécaniques d'une tête 3+3, les deux Mi (grave et aigu) en
+// bas de leur colonne : gauche haut→bas = Ré La Mi(grave) ; droite
+// haut→bas = Sol Si Mi(aigu).
+const PEG_COLS = [[2, 1, 0], [3, 4, 5]];
 
 function buildHeadstock() {
   const strings = tuner.strings;
