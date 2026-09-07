@@ -88,6 +88,7 @@ const metroTempoVal    = document.getElementById('metro-tempo-val');
 const metroTempoDown   = document.getElementById('metro-tempo-down');
 const metroTempoUp     = document.getElementById('metro-tempo-up');
 const metroDots       = document.getElementById('metro-dots');
+const metroSig        = document.getElementById('metro-sig');
 const btnMetronomeHome = document.getElementById('btn-metronome-home');
 const btnMetronomeBack = document.getElementById('btn-metronome-back');
 const hmPlay          = document.getElementById('hm-play');
@@ -96,6 +97,7 @@ const hmTempoVal      = document.getElementById('hm-tempo-val');
 const hmTempoDown     = document.getElementById('hm-tempo-down');
 const hmTempoUp       = document.getElementById('hm-tempo-up');
 const hmDots          = document.getElementById('hm-dots');
+const hmSig           = document.getElementById('hm-sig');
 
 // ── Utilitaires ────────────────────────────────────────────────────
 function showScreen(name) {
@@ -653,8 +655,9 @@ instrumentPanes.addEventListener('touchend', (e) => {
 // avec le lecteur : outil d'entraînement. Deux instances, même moteur
 // (static/metronome.js) : le panneau de l'écran résultats (pré-réglé
 // sur le tempo détecté) et l'écran plein dédié accessible de l'accueil.
-function makeMetronomeUI({ playBtn, bpmEl, dotsEl, downBtn, upBtn, valBtn, indicator, resetTempo }) {
+function makeMetronomeUI({ playBtn, bpmEl, dotsEl, downBtn, upBtn, valBtn, sigEl, indicator, resetTempo }) {
   const metro = createMetronome({ onBeat });
+  const sigValues = sigEl ? [...sigEl.options].map(o => Number(o.value)) : null;
 
   function renderDots(n) {
     dotsEl.innerHTML = '';
@@ -674,11 +677,18 @@ function makeMetronomeUI({ playBtn, bpmEl, dotsEl, downBtn, upBtn, valBtn, indic
     if (!on) onBeat(-1);
   }
   function setTempo(bpm) { bpmEl.textContent = String(metro.setTempo(bpm)); }
+  function applyBeats(n) {
+    metro.setBeatsPerBar(n);
+    renderDots(n);
+    if (sigEl) sigEl.value = String(n);
+  }
   function reset(tempo, beatsPerBar) {
     metro.stop();
     setPlaying(false);
-    metro.setBeatsPerBar(beatsPerBar);
-    renderDots(beatsPerBar);
+    // Si la mesure détectée n'est pas dans la liste du sélecteur, on
+    // retombe sur 4/4.
+    const n = (sigValues && !sigValues.includes(beatsPerBar)) ? 4 : beatsPerBar;
+    applyBeats(n);
     setTempo(tempo);
   }
 
@@ -686,6 +696,7 @@ function makeMetronomeUI({ playBtn, bpmEl, dotsEl, downBtn, upBtn, valBtn, indic
   downBtn.addEventListener('click', () => setTempo(metro.tempo - 1));
   upBtn.addEventListener('click',   () => setTempo(metro.tempo + 1));
   if (valBtn && resetTempo) valBtn.addEventListener('click', () => setTempo(resetTempo()));
+  if (sigEl) sigEl.addEventListener('change', () => applyBeats(Number(sigEl.value)));
 
   return { metro, reset, setPlaying };
 }
@@ -693,7 +704,7 @@ function makeMetronomeUI({ playBtn, bpmEl, dotsEl, downBtn, upBtn, valBtn, indic
 // Panneau sur l'écran résultats (pré-réglé sur le tempo/mesure détectés)
 const resultsMetro = makeMetronomeUI({
   playBtn: metroPlay, bpmEl: metroBpm, dotsEl: metroDots,
-  downBtn: metroTempoDown, upBtn: metroTempoUp, valBtn: metroTempoVal,
+  downBtn: metroTempoDown, upBtn: metroTempoUp, valBtn: metroTempoVal, sigEl: metroSig,
   indicator: btnMetronome, resetTempo: () => state.tempo || 120,
 });
 function resetMetronome() {
@@ -705,7 +716,7 @@ btnMetronome.addEventListener('click', () => metronomePanel.classList.toggle('hi
 // Écran plein dédié, accessible de l'accueil (tempo par défaut 120)
 const homeMetro = makeMetronomeUI({
   playBtn: hmPlay, bpmEl: hmBpm, dotsEl: hmDots,
-  downBtn: hmTempoDown, upBtn: hmTempoUp, valBtn: hmTempoVal,
+  downBtn: hmTempoDown, upBtn: hmTempoUp, valBtn: hmTempoVal, sigEl: hmSig,
   resetTempo: () => 120,
 });
 btnMetronomeHome.addEventListener('click', () => {

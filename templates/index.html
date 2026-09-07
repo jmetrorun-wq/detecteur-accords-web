@@ -122,6 +122,14 @@
         <button type="button" id="hm-tempo-val" class="metro-tempo-val" title="Revenir à 120 BPM"><span id="hm-bpm">120</span> BPM</button>
         <button type="button" id="hm-tempo-up" class="btn-small" aria-label="Accélérer">+</button>
       </div>
+      <select id="hm-sig" class="metro-sig metro-sig-big" aria-label="Mesure">
+        <option value="2">2/4</option>
+        <option value="3">3/4</option>
+        <option value="4" selected>4/4</option>
+        <option value="5">5/4</option>
+        <option value="6">6/8</option>
+        <option value="7">7/8</option>
+      </select>
       <button type="button" id="hm-play" class="metro-play metro-play-big" aria-label="Démarrer / arrêter">▶</button>
     </div>
   </section>
@@ -164,13 +172,23 @@
 
     <!-- Métronome autonome (tempo détecté, sans lien avec la lecture) -->
     <div id="metronome-panel" class="metronome-panel hidden">
-      <button type="button" id="metro-play" class="metro-play" aria-label="Démarrer / arrêter">▶</button>
-      <div class="metro-tempo">
-        <button type="button" id="metro-tempo-down" class="btn-small" aria-label="Ralentir">−</button>
-        <button type="button" id="metro-tempo-val" class="metro-tempo-val" title="Revenir au tempo détecté"><span id="metro-bpm">120</span> BPM</button>
-        <button type="button" id="metro-tempo-up" class="btn-small" aria-label="Accélérer">+</button>
-      </div>
       <div id="metro-dots" class="metro-dots"></div>
+      <div class="metro-controls">
+        <button type="button" id="metro-play" class="metro-play" aria-label="Démarrer / arrêter">▶</button>
+        <div class="metro-tempo">
+          <button type="button" id="metro-tempo-down" class="btn-small" aria-label="Ralentir">−</button>
+          <button type="button" id="metro-tempo-val" class="metro-tempo-val" title="Revenir au tempo détecté"><span id="metro-bpm">120</span> BPM</button>
+          <button type="button" id="metro-tempo-up" class="btn-small" aria-label="Accélérer">+</button>
+        </div>
+        <select id="metro-sig" class="metro-sig" aria-label="Mesure">
+          <option value="2">2/4</option>
+          <option value="3">3/4</option>
+          <option value="4" selected>4/4</option>
+          <option value="5">5/4</option>
+          <option value="6">6/8</option>
+          <option value="7">7/8</option>
+        </select>
+      </div>
     </div>
 
     <!-- Barre défilante des accords (une case par temps, façon Chordify) -->
