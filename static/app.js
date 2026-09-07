@@ -71,6 +71,14 @@ const separateProgLabel = document.getElementById('separate-progress-label');
 const separateErrorEl   = document.getElementById('separate-error');
 const separateStemsEl   = document.getElementById('separate-stems');
 const btnReanalyzeOther = document.getElementById('btn-reanalyze-other');
+const btnMetronome    = document.getElementById('btn-metronome');
+const metronomePanel  = document.getElementById('metronome-panel');
+const metroPlay       = document.getElementById('metro-play');
+const metroBpm        = document.getElementById('metro-bpm');
+const metroTempoVal    = document.getElementById('metro-tempo-val');
+const metroTempoDown   = document.getElementById('metro-tempo-down');
+const metroTempoUp     = document.getElementById('metro-tempo-up');
+const metroDots       = document.getElementById('metro-dots');
 
 // ── Utilitaires ────────────────────────────────────────────────────
 function showScreen(name) {
@@ -418,6 +426,7 @@ function applyResults(data) {
 
   renderHeader();
   resetSeparatePanel();
+  resetMetronome();
   showScreen('results');   // visible d'abord : renderBeatStrip mesure la géométrie des cases
   setInstrument(state.instrument, false);  // applique la vue mémorisée + dimensionne le canvas
   renderBeatStrip();
@@ -621,6 +630,55 @@ instrumentPanes.addEventListener('touchend', (e) => {
   if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.8) return;
   setInstrument(dx < 0 ? 'guitar' : 'piano');
 }, { passive: true });
+
+// ── Métronome autonome ────────────────────────────────────────────
+// Clic au tempo détecté (ajustable), accent sur le 1er temps de la
+// mesure. Sans lien avec le lecteur : outil d'entraînement.
+const metronome = createMetronome({ onBeat: onMetroBeat });
+
+function renderMetroDots(n) {
+  metroDots.innerHTML = '';
+  for (let i = 0; i < n; i++) {
+    const d = document.createElement('span');
+    d.className = 'metro-dot' + (i === 0 ? ' accent' : '');
+    metroDots.appendChild(d);
+  }
+}
+
+function onMetroBeat(b) {
+  const dots = metroDots.children;
+  for (let i = 0; i < dots.length; i++) dots[i].classList.toggle('on', i === b);
+}
+
+function setMetroPlaying(on) {
+  metroPlay.textContent = on ? '⏸' : '▶';
+  btnMetronome.classList.toggle('running', on);
+  if (!on) onMetroBeat(-1);
+}
+
+function setMetroTempo(bpm) {
+  metroBpm.textContent = String(metronome.setTempo(bpm));
+}
+
+function resetMetronome() {
+  metronome.stop();
+  setMetroPlaying(false);
+  metronomePanel.classList.add('hidden');
+  metronome.setBeatsPerBar(state.beatsPerBar || 4);
+  renderMetroDots(state.beatsPerBar || 4);
+  setMetroTempo(state.tempo || 120);
+}
+
+btnMetronome.addEventListener('click', () => {
+  metronomePanel.classList.toggle('hidden');
+});
+metroPlay.addEventListener('click', () => {
+  metronome.toggle();
+  setMetroPlaying(metronome.running);
+});
+metroTempoDown.addEventListener('click', () => setMetroTempo(metronome.tempo - 1));
+metroTempoUp.addEventListener('click',   () => setMetroTempo(metronome.tempo + 1));
+metroTempoVal.addEventListener('click',  () => setMetroTempo(state.tempo || 120));
 
 // Barre défilante : surligne la case du temps en cours et fait glisser
 // la bande pour garder la lecture centrée. Le défilement est piloté
@@ -875,6 +933,7 @@ btnReanalyzeOther.addEventListener('click', async () => {
 btnBack.addEventListener('click', () => {
   audioEl.pause();
   audioEl.src = '';
+  resetMetronome();
   fileInput.value = '';
   dailymotionQuery.value = '';
   dailymotionResults.classList.add('hidden');

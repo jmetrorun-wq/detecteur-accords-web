@@ -107,9 +107,21 @@
         <span id="tr-label" class="tr-label">±0</span>
         <button id="btn-tr-up" class="btn-small">+♯</button>
       </div>
+      <button id="btn-metronome" class="btn-icon-only" title="Métronome">⏱</button>
       <button id="btn-export-pdf" class="btn-icon-only" title="Exporter en PDF">📄</button>
       <button id="btn-separate" class="btn-icon-only" title="Séparer les pistes">🎚️</button>
     </header>
+
+    <!-- Métronome autonome (tempo détecté, sans lien avec la lecture) -->
+    <div id="metronome-panel" class="metronome-panel hidden">
+      <button type="button" id="metro-play" class="metro-play" aria-label="Démarrer / arrêter">▶</button>
+      <div class="metro-tempo">
+        <button type="button" id="metro-tempo-down" class="btn-small" aria-label="Ralentir">−</button>
+        <button type="button" id="metro-tempo-val" class="metro-tempo-val" title="Revenir au tempo détecté"><span id="metro-bpm">120</span> BPM</button>
+        <button type="button" id="metro-tempo-up" class="btn-small" aria-label="Accélérer">+</button>
+      </div>
+      <div id="metro-dots" class="metro-dots"></div>
+    </div>
 
     <!-- Barre défilante des accords (une case par temps, façon Chordify) -->
     <div id="chord-list" class="chord-list"></div>
@@ -187,6 +199,7 @@
 
 <script src="/static/piano.js?v={{ asset_version }}"></script>
 <script src="/static/guitar.js?v={{ asset_version }}"></script>
+<script src="/static/metronome.js?v={{ asset_version }}"></script>
 <script src="/static/app.js?v={{ asset_version }}"></script>
 </body>
 </html>
