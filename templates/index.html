@@ -39,6 +39,11 @@
         Historique
       </button>
 
+      <button type="button" id="btn-tuner" class="btn-secondary">
+        <span class="btn-icon">🎸</span>
+        Accordeur
+      </button>
+
       <p class="format-hint">MP3 · M4A · WAV · FLAC · OGG · AAC · AIFF · WMA</p>
 
       <div class="upload-divider">ou</div>
@@ -74,6 +79,28 @@
     </header>
     <div id="history-list" class="history-list"></div>
     <p id="history-empty" class="history-empty hidden">Aucune analyse pour l'instant — les morceaux analysés apparaîtront ici.</p>
+  </section>
+
+  <!-- ════════════════════════ ÉCRAN ACCORDEUR ════════════════════ -->
+  <section id="screen-tuner" class="screen">
+    <header class="results-header">
+      <button id="btn-tuner-back" class="btn-icon-only" title="Retour">←</button>
+      <div class="header-info"><strong>Accordeur</strong></div>
+    </header>
+    <div class="tuner-center">
+      <div id="tuner-note" class="tuner-note">–</div>
+      <div id="tuner-detail" class="tuner-detail">Joue une note</div>
+      <div class="tuner-gauge">
+        <div class="tuner-gauge-track"></div>
+        <div class="tuner-gauge-center"></div>
+        <div id="tuner-needle" class="tuner-needle"></div>
+      </div>
+      <div class="tuner-scale">
+        <span>-50</span><span>♭</span><span>0</span><span>♯</span><span>+50</span>
+      </div>
+      <div id="tuner-status" class="tuner-status">Joue une corde à vide…</div>
+      <div id="tuner-error" class="tuner-error hidden"></div>
+    </div>
   </section>
 
   <!-- ════════════════════════ ÉCRAN CHARGEMENT ════════════════════ -->
@@ -200,6 +227,7 @@
 <script src="/static/piano.js?v={{ asset_version }}"></script>
 <script src="/static/guitar.js?v={{ asset_version }}"></script>
 <script src="/static/metronome.js?v={{ asset_version }}"></script>
+<script src="/static/tuner.js?v={{ asset_version }}"></script>
 <script src="/static/app.js?v={{ asset_version }}"></script>
 </body>
 </html>

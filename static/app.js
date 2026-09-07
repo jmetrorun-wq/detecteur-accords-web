@@ -23,9 +23,17 @@ const screens = {
   loading:  document.getElementById('screen-loading'),
   results:  document.getElementById('screen-results'),
   history:  document.getElementById('screen-history'),
+  tuner:    document.getElementById('screen-tuner'),
 };
 const btnHistory      = document.getElementById('btn-history');
 const btnHistoryBack  = document.getElementById('btn-history-back');
+const btnTuner        = document.getElementById('btn-tuner');
+const btnTunerBack    = document.getElementById('btn-tuner-back');
+const tunerNote       = document.getElementById('tuner-note');
+const tunerDetail     = document.getElementById('tuner-detail');
+const tunerNeedle     = document.getElementById('tuner-needle');
+const tunerStatus     = document.getElementById('tuner-status');
+const tunerError      = document.getElementById('tuner-error');
 const historyListEl   = document.getElementById('history-list');
 const historyEmptyEl  = document.getElementById('history-empty');
 const fileInput       = document.getElementById('file-input');
@@ -679,6 +687,53 @@ metroPlay.addEventListener('click', () => {
 metroTempoDown.addEventListener('click', () => setMetroTempo(metronome.tempo - 1));
 metroTempoUp.addEventListener('click',   () => setMetroTempo(metronome.tempo + 1));
 metroTempoVal.addEventListener('click',  () => setMetroTempo(state.tempo || 120));
+
+// ── Accordeur chromatique ─────────────────────────────────────────
+const tuner = createTuner({ onUpdate: onTunerUpdate, onError: onTunerError });
+
+function onTunerUpdate(d) {
+  if (!d) {
+    tunerNote.textContent = '–';
+    tunerNote.className = 'tuner-note';
+    tunerDetail.textContent = 'Joue une note';
+    tunerNeedle.className = 'tuner-needle';
+    tunerStatus.textContent = 'Joue une corde à vide…';
+    tunerStatus.classList.remove('in-tune');
+    return;
+  }
+  const cls = d.inTune ? 'in-tune' : 'off';
+  tunerNote.innerHTML = `${d.note}<sub style="font-size:0.4em;color:var(--text-dim)">${d.octave}</sub>`;
+  tunerNote.className = 'tuner-note ' + cls;
+  tunerDetail.textContent = `${d.noteFr} · ${d.frequency.toFixed(1)} Hz  (cible ${d.targetHz.toFixed(1)} Hz)`;
+  tunerNeedle.className = 'tuner-needle on' + (d.inTune ? ' in-tune' : '');
+  tunerNeedle.style.left = `${50 + d.cents}%`;
+  tunerStatus.classList.toggle('in-tune', d.inTune);
+  tunerStatus.textContent = d.inTune ? 'Juste ✓'
+    : d.cents < 0 ? `Trop bas  ▼ ${Math.abs(d.cents)} cents`
+    : `Trop haut  ▲ ${d.cents} cents`;
+}
+
+function onTunerError(err) {
+  tunerError.classList.remove('hidden');
+  tunerError.textContent = (err && err.name === 'NotAllowedError')
+    ? "Accès au micro refusé. Autorise le micro dans les réglages du navigateur pour utiliser l'accordeur."
+    : `Micro indisponible : ${err ? err.message : 'erreur inconnue'}`;
+}
+
+async function openTuner() {
+  tunerError.classList.add('hidden');
+  onTunerUpdate(null);
+  showScreen('tuner');
+  await tuner.start();
+}
+
+function closeTuner() {
+  tuner.stop();
+  showScreen('upload');
+}
+
+btnTuner.addEventListener('click', openTuner);
+btnTunerBack.addEventListener('click', closeTuner);
 
 // Barre défilante : surligne la case du temps en cours et fait glisser
 // la bande pour garder la lecture centrée. Le défilement est piloté
