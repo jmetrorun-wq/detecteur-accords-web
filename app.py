@@ -29,11 +29,16 @@ _STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
 
 
 def _asset_version() -> str:
+    # Date de modif la plus récente parmi TOUS les .js/.css servis : ainsi
+    # toute modif d'un asset (y compris tuner.js, metronome.js…) casse le
+    # cache très collant d'iOS Safari / PWA via le ?v=<version>.
     try:
-        return str(int(max(
+        mtimes = [
             os.path.getmtime(os.path.join(_STATIC_DIR, f))
-            for f in ('app.js', 'style.css', 'piano.js', 'guitar.js')
-        )))
+            for f in os.listdir(_STATIC_DIR)
+            if f.endswith(('.js', '.css'))
+        ]
+        return str(int(max(mtimes))) if mtimes else '0'
     except OSError:
         return '0'
 

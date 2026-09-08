@@ -41,6 +41,31 @@ function createTuner({ onUpdate, onError } = {}) {
   let hpY = 0, hpX = 0;          // état du passe-haut (continu entre trames)
   let manualIdx = null;          // corde verrouillée par un tap ; null = auto
   let inTuneSinceMs = 0, confirmed = false; // « clic » de validation (front montant)
+  let audioUnlocked = false;    // iOS : contexte débloqué par un geste
+
+  // Prépare/débloque la sortie audio. À appeler depuis un geste (tap) : crée
+  // le contexte si besoin, le réveille, le route « playback » pour passer
+  // par-dessus l'interrupteur silencieux de l'iPhone (iOS 16.4+), et joue un
+  // échantillon muet — sinon iOS garde le contexte muet en PWA installée.
+  function ensureAudio() {
+    if (!ac) {
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      if (!Ctor) return false;
+      ac = new Ctor();
+    }
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
+    if (ac.state === 'suspended') { try { ac.resume(); } catch {} }
+    if (!audioUnlocked) {
+      try {
+        const src = ac.createBufferSource();
+        src.buffer = ac.createBuffer(1, 1, 22050);
+        src.connect(ac.destination);
+        src.start(0);
+        audioUnlocked = true;
+      } catch {}
+    }
+    return true;
+  }
 
   // Passe-haut 1 pôle puis décimation /DECIM (moyenne de DECIM échantillons,
   // anti-repliement léger). Rend un buffer DECIM× plus court.
@@ -218,11 +243,9 @@ function createTuner({ onUpdate, onError } = {}) {
 
   return {
     async start() {
-      if (ac) return;
-      const Ctor = window.AudioContext || window.webkitAudioContext;
-      if (!Ctor) { onError && onError(new Error('Web Audio indisponible')); return; }
-      ac = new Ctor();
-      if (ac.state === 'suspended') { try { await ac.resume(); } catch {} }
+      if (analyser) return;              // micro déjà en écoute
+      if (!ensureAudio()) { onError && onError(new Error('Web Audio indisponible')); return; }
+      try { await ac.resume(); } catch {}
       // Le micro peut échouer (refus) sans empêcher les tons de référence.
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -256,14 +279,13 @@ function createTuner({ onUpdate, onError } = {}) {
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
       if (ac) { try { ac.close(); } catch {} ac = null; }
       analyser = null; buf = null; smoothHz = 0; prevF = 0; lockCount = 0;
-      inTuneSinceMs = 0; confirmed = false;
+      inTuneSinceMs = 0; confirmed = false; audioUnlocked = false;
       manualIdx = null;
     },
     // Joue ~1,8 s le son de la corde `idx` (fondamentale + 2 harmoniques)
     // et verrouille l'aiguille sur cette corde.
     playString(idx) {
-      if (!ac) return;
-      if (ac.state === 'suspended') ac.resume();
+      if (!ensureAudio()) return;
       manualIdx = idx;
       const s = STRINGS[idx];
       const t0 = ac.currentTime;
