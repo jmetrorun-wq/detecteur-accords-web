@@ -44,16 +44,17 @@ function createTuner({ onUpdate, onError } = {}) {
   let audioUnlocked = false;    // iOS : contexte débloqué par un geste
 
   // Prépare/débloque la sortie audio. À appeler depuis un geste (tap) : crée
-  // le contexte si besoin, le réveille, le route « playback » pour passer
-  // par-dessus l'interrupteur silencieux de l'iPhone (iOS 16.4+), et joue un
-  // échantillon muet — sinon iOS garde le contexte muet en PWA installée.
+  // le contexte si besoin, le réveille, et joue un échantillon muet — sinon
+  // iOS garde le contexte muet en PWA installée.
+  // Catégorie 'play-and-record' : compatible micro + sortie audible (la
+  // catégorie 'playback' bloquerait getUserMedia).
   function ensureAudio() {
     if (!ac) {
       const Ctor = window.AudioContext || window.webkitAudioContext;
       if (!Ctor) return false;
       ac = new Ctor();
     }
-    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
+    try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch {}
     if (ac.state === 'suspended') { try { ac.resume(); } catch {} }
     if (!audioUnlocked) {
       try {
