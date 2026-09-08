@@ -785,6 +785,16 @@ btnMetronomeBack.addEventListener('click', () => {
 const tuner = createTuner({ onUpdate: onTunerUpdate, onError: onTunerError });
 const tunerHeadstock = document.getElementById('tuner-headstock');
 
+// Taper le gros nom de note rejoue le son de référence de la corde visée
+// (même effet qu'une mécanique).
+let lastTunerIdx = 0;
+tunerNote.style.cursor = 'pointer';
+tunerNote.title = 'Écouter la note de référence';
+tunerNote.addEventListener('click', () => {
+  tuner.playString(lastTunerIdx);
+  markActivePeg(lastTunerIdx);
+});
+
 // Colonnes de mécaniques d'une tête 3+3, les deux Mi (grave et aigu) en
 // bas de leur colonne : gauche haut→bas = Ré La Mi(grave) ; droite
 // haut→bas = Sol Si Mi(aigu).
@@ -828,6 +838,7 @@ function markActivePeg(idx) {
 
 function onTunerUpdate(d) {
   if (!d) return;
+  lastTunerIdx = d.stringIdx;
   markActivePeg(d.stringIdx);
   const cls = d.hasPitch ? (d.inTune ? 'in-tune' : 'off') : '';
   tunerNote.innerHTML = `${d.noteFr}<sub style="font-size:0.4em;color:var(--text-dim)">${d.octave}</sub>`;

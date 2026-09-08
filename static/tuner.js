@@ -40,6 +40,7 @@ function createTuner({ onUpdate, onError } = {}) {
   let smoothHz = 0, lastVoiceMs = 0, prevF = 0, lockCount = 0;
   let hpY = 0, hpX = 0;          // état du passe-haut (continu entre trames)
   let manualIdx = null;          // corde verrouillée par un tap ; null = auto
+  let inTuneSinceMs = 0, confirmed = false; // « clic » de validation (front montant)
 
   // Passe-haut 1 pôle puis décimation /DECIM (moyenne de DECIM échantillons,
   // anti-repliement léger). Rend un buffer DECIM× plus court.
@@ -153,6 +154,25 @@ function createTuner({ onUpdate, onError } = {}) {
     });
   }
 
+  // Petit « clic » de validation : deux bips courts et aigus (bien au-dessus
+  // de FMAX, donc sans effet sur la détection même repris par le micro).
+  function playConfirm() {
+    if (!ac) return;
+    const t0 = ac.currentTime;
+    [[0, 1320], [0.085, 1980]].forEach(([dt, hz]) => {
+      const o = ac.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = hz;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, t0 + dt);
+      g.gain.exponentialRampToValueAtTime(0.22, t0 + dt + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.13);
+      o.connect(g).connect(ac.destination);
+      o.start(t0 + dt);
+      o.stop(t0 + dt + 0.16);
+    });
+  }
+
   function loop() {
     analyser.getFloatTimeDomainData(buf);
     const ds = preprocess(buf, ac.sampleRate);
@@ -173,9 +193,21 @@ function createTuner({ onUpdate, onError } = {}) {
         smoothHz = smoothHz * 0.6 + f * 0.4;
       }
       lastVoiceMs = now;
-      emit(manualIdx != null ? manualIdx : nearestString(smoothHz), smoothHz);
+      const idx = manualIdx != null ? manualIdx : nearestString(smoothHz);
+      // « Clic » de validation : joué une fois quand la corde reste juste
+      // (±5 cents) au moins 150 ms. Réarmé seulement après un écart franc
+      // (>12 cents) ou la perte du son.
+      const cents = 1200 * Math.log2(smoothHz / STRINGS[idx].hz);
+      if (Math.abs(cents) <= 5) {
+        if (inTuneSinceMs === 0) inTuneSinceMs = now;
+        if (!confirmed && now - inTuneSinceMs >= 150) { playConfirm(); confirmed = true; }
+      } else if (Math.abs(cents) > 12) {
+        inTuneSinceMs = 0; confirmed = false;
+      }
+      emit(idx, smoothHz);
     } else {
       prevF = 0; lockCount = 0;
+      inTuneSinceMs = 0; confirmed = false;
       if (now - lastVoiceMs > 250) {
         smoothHz = 0;
         emit(manualIdx != null ? manualIdx : 0, 0);
@@ -213,6 +245,7 @@ function createTuner({ onUpdate, onError } = {}) {
       source.connect(makeup);
       makeup.connect(analyser);
       smoothHz = 0; prevF = 0; lockCount = 0; hpY = 0; hpX = 0;
+      inTuneSinceMs = 0; confirmed = false;
       lastVoiceMs = performance.now();
       loop();
     },
@@ -223,6 +256,7 @@ function createTuner({ onUpdate, onError } = {}) {
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
       if (ac) { try { ac.close(); } catch {} ac = null; }
       analyser = null; buf = null; smoothHz = 0; prevF = 0; lockCount = 0;
+      inTuneSinceMs = 0; confirmed = false;
       manualIdx = null;
     },
     // Joue ~1,8 s le son de la corde `idx` (fondamentale + 2 harmoniques)
