@@ -4,10 +4,18 @@
  * Deux usages combinés :
  *  - toucher une mécanique joue le son de référence de la corde
  *    correspondante (accordage à l'oreille) ;
- *  - le micro détecte la hauteur jouée (fonction de différence normalisée
- *    cumulée, cœur de l'algo YIN — robuste aux harmoniques) et l'aiguille
- *    affiche l'écart en cents PAR RAPPORT à la corde active (verrouillée
- *    par un tap, sinon la plus proche automatiquement).
+ *  - le micro détecte la hauteur jouée (méthode McLeod / NSDF — plus
+ *    robuste qu'un simple YIN quand la corde s'éteint, car normalisée par
+ *    l'énergie locale) et l'aiguille affiche l'écart en cents PAR RAPPORT
+ *    à la corde active (verrouillée par un tap, sinon la plus proche
+ *    automatiquement).
+ *
+ * Le signal du micro est passé-haut (~70 Hz, coupe le ronflement et la
+ * manipulation) puis sous-échantillonné /2 avant l'analyse : la plage
+ * utile (82–330 Hz) tient dans une fenêtre 4× moins lourde à traiter, ce
+ * qui garde l'aiguille fluide même sur un téléphone. La recherche est
+ * bornée juste autour des six cordes (70–400 Hz) : hors de cette bande,
+ * la détection accrochait une harmonique et affichait la mauvaise octave.
  */
 function createTuner({ onUpdate, onError } = {}) {
   // Fréquences de l'accordage standard (La 4 = 440 Hz).
@@ -19,68 +27,101 @@ function createTuner({ onUpdate, onError } = {}) {
     { fr: 'Si', octave: 3, hz: 246.94 },  // 2e
     { fr: 'Mi', octave: 4, hz: 329.63 },  // 1re (aiguë)
   ];
-  const FMIN = 55;
-  const FMAX = 1600;
-  const YIN_THRESHOLD = 0.12;
+  const FMIN = 70;               // un cran sous le Mi grave (82,41 Hz)
+  const FMAX = 400;              // un cran au-dessus du Mi aigu (329,63 Hz)
+  const NSDF_PICK = 0.9;         // 1er pic ≥ 0,9 × pic max (anti-erreur d'octave)
+  const NSDF_MIN = 0.55;         // en deçà : signal pas assez périodique
+  const RMS_GATE = 0.004;        // sous ce niveau : silence
+  const DECIM = 2;               // sous-échantillonnage avant analyse
+  const HPF_HZ = 70;             // passe-haut anti-ronflement
 
-  let ac = null, analyser = null, source = null, stream = null;
+  let ac = null, analyser = null, source = null, makeup = null, stream = null;
   let rafId = null, buf = null;
-  let smoothHz = 0, lastVoiceMs = 0;
-  let manualIdx = null;   // corde verrouillée par un tap ; null = auto (plus proche)
+  let smoothHz = 0, lastVoiceMs = 0, prevF = 0, lockCount = 0;
+  let hpY = 0, hpX = 0;          // état du passe-haut (continu entre trames)
+  let manualIdx = null;          // corde verrouillée par un tap ; null = auto
+
+  // Passe-haut 1 pôle puis décimation /DECIM (moyenne de DECIM échantillons,
+  // anti-repliement léger). Rend un buffer DECIM× plus court.
+  function preprocess(x, srIn) {
+    const rc = 1 / (2 * Math.PI * HPF_HZ);
+    const dt = 1 / srIn;
+    const a = rc / (rc + dt);
+    const n = x.length;
+    const m = Math.floor(n / DECIM);
+    const out = new Float32Array(m);
+    let y = hpY, xp = hpX;
+    for (let i = 0; i < m; i++) {
+      let s = 0;
+      for (let k = 0; k < DECIM; k++) {
+        const xi = x[i * DECIM + k];
+        y = a * (y + xi - xp);
+        xp = xi;
+        s += y;
+      }
+      out[i] = s / DECIM;
+    }
+    hpY = y; hpX = xp;
+    return out;
+  }
 
   function detectPitch(x, sr) {
     const N = x.length;
     let rms = 0;
     for (let i = 0; i < N; i++) rms += x[i] * x[i];
     rms = Math.sqrt(rms / N);
-    if (rms < 0.008) return -1;
+    if (rms < RMS_GATE) return -1;
 
     const tauMax = Math.min(N >> 1, Math.ceil(sr / FMIN));
     const tauMin = Math.max(2, Math.floor(sr / FMAX));
+    if (tauMax <= tauMin + 2) return -1;
+    const W = N - tauMax;               // fenêtre d'intégration
 
-    const d = new Float32Array(tauMax + 1);
+    // NSDF (McLeod) : n(τ) = 2·Σ x[i]·x[i+τ] / Σ (x[i]² + x[i+τ]²).
+    // Normalisée par l'énergie locale → ≈1 à la vraie période même quand
+    // l'amplitude décroît fortement (corde qui s'éteint), là où un YIN
+    // brut sous-estime la période.
+    let e0 = 0;
+    for (let i = 0; i < W; i++) e0 += x[i] * x[i];
+    const nsdf = new Float32Array(tauMax + 1);
     for (let tau = tauMin; tau <= tauMax; tau++) {
-      let s = 0;
-      for (let i = 0; i < N - tauMax; i++) {
-        const diff = x[i] - x[i + tau];
-        s += diff * diff;
+      let r = 0, et = 0;
+      for (let i = 0; i < W; i++) {
+        const a = x[i], b = x[i + tau];
+        r += a * b;
+        et += b * b;
       }
-      d[tau] = s;
+      const m = e0 + et;
+      nsdf[tau] = m > 0 ? (2 * r) / m : 0;
     }
 
-    const dn = new Float32Array(tauMax + 1);
-    let running = 0;
-    dn[0] = 1;
-    for (let tau = tauMin; tau <= tauMax; tau++) {
-      running += d[tau];
-      dn[tau] = running > 0 ? d[tau] * (tau - tauMin + 1) / running : 1;
-    }
-
-    let tau = -1;
+    // Maxima locaux positifs ; on garde le plus grand (maxVal), puis on
+    // choisit le PREMIER pic ≥ NSDF_PICK × maxVal : c'est la vraie
+    // fondamentale, pas une harmonique (erreur d'octave par le haut) ni
+    // une sous-harmonique (erreur par le bas).
+    let maxVal = 0, chosen = -1;
+    const peaks = [];
     for (let t = tauMin + 1; t < tauMax; t++) {
-      if (dn[t] < YIN_THRESHOLD) {
-        while (t + 1 < tauMax && dn[t + 1] < dn[t]) t++;
-        tau = t;
-        break;
+      if (nsdf[t] > 0 && nsdf[t] >= nsdf[t - 1] && nsdf[t] >= nsdf[t + 1]) {
+        peaks.push(t);
+        if (nsdf[t] > maxVal) maxVal = nsdf[t];
+        t++; // évite un doublon sur un plateau
       }
     }
-    if (tau === -1) {
-      let best = Infinity;
-      for (let t = tauMin + 1; t < tauMax; t++) {
-        if (dn[t] < best) { best = dn[t]; tau = t; }
-      }
-      if (tau === -1 || best > 0.5) return -1;
+    if (maxVal < NSDF_MIN) return -1;
+    for (let i = 0; i < peaks.length; i++) {
+      if (nsdf[peaks[i]] >= NSDF_PICK * maxVal) { chosen = peaks[i]; break; }
     }
+    if (chosen < 0) return -1;
 
-    // Interpolation parabolique sur la différence BRUTE d[] (la version
-    // normalisée dn[] biaise la période interpolée).
-    let T = tau;
-    if (tau > tauMin && tau < tauMax) {
-      const y1 = d[tau - 1], y2 = d[tau], y3 = d[tau + 1];
-      const denom = 2 * (2 * y2 - y1 - y3);
+    // Interpolation parabolique autour du maximum retenu.
+    let T = chosen;
+    if (chosen > tauMin && chosen < tauMax) {
+      const y1 = nsdf[chosen - 1], y2 = nsdf[chosen], y3 = nsdf[chosen + 1];
+      const denom = y1 - 2 * y2 + y3;
       if (denom !== 0) {
-        const shift = (y3 - y1) / denom;
-        if (shift > -1 && shift < 1) T = tau + shift;
+        const shift = 0.5 * (y1 - y3) / denom;
+        if (shift > -1 && shift < 1) T = chosen + shift;
       }
     }
 
@@ -114,16 +155,31 @@ function createTuner({ onUpdate, onError } = {}) {
 
   function loop() {
     analyser.getFloatTimeDomainData(buf);
-    const f = detectPitch(buf, ac.sampleRate);
+    const ds = preprocess(buf, ac.sampleRate);
+    const f = detectPitch(ds, ac.sampleRate / DECIM);
     const now = performance.now();
 
     if (f > 0) {
-      smoothHz = smoothHz ? smoothHz * 0.8 + f * 0.2 : f;
+      // Deux trames cohérentes (±4 %) avant d'accrocher depuis le silence :
+      // évite les sursauts parasites quand rien n'est joué.
+      const consistent = prevF > 0 && Math.abs(f - prevF) / prevF < 0.04;
+      prevF = f;
+      if (smoothHz === 0) {
+        if (consistent && ++lockCount >= 2) { smoothHz = f; lockCount = 0; }
+        else { rafId = requestAnimationFrame(loop); return; }
+      } else if (Math.abs(f - smoothHz) / smoothHz > 0.06) {
+        smoothHz = f;                       // saut franc (changement de corde)
+      } else {
+        smoothHz = smoothHz * 0.6 + f * 0.4;
+      }
       lastVoiceMs = now;
       emit(manualIdx != null ? manualIdx : nearestString(smoothHz), smoothHz);
-    } else if (now - lastVoiceMs > 250) {
-      smoothHz = 0;
-      emit(manualIdx != null ? manualIdx : 0, 0);
+    } else {
+      prevF = 0; lockCount = 0;
+      if (now - lastVoiceMs > 250) {
+        smoothHz = 0;
+        emit(manualIdx != null ? manualIdx : 0, 0);
+      }
     }
     rafId = requestAnimationFrame(loop);
   }
@@ -146,19 +202,28 @@ function createTuner({ onUpdate, onError } = {}) {
       }
       analyser = ac.createAnalyser();
       analyser.fftSize = 4096;
+      analyser.smoothingTimeConstant = 0;
       buf = new Float32Array(analyser.fftSize);
       source = ac.createMediaStreamSource(stream);
-      source.connect(analyser);
-      smoothHz = 0;
+      // Gain de rattrapage : sur certains téléphones, micro + AGC coupé donne
+      // un niveau très faible ; la NSDF est insensible à l'échelle mais pas
+      // la porte de silence. (Non connecté à la sortie : pas de larsen.)
+      makeup = ac.createGain();
+      makeup.gain.value = 4;
+      source.connect(makeup);
+      makeup.connect(analyser);
+      smoothHz = 0; prevF = 0; lockCount = 0; hpY = 0; hpX = 0;
       lastVoiceMs = performance.now();
       loop();
     },
     stop() {
       if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
       if (source) { try { source.disconnect(); } catch {} source = null; }
+      if (makeup) { try { makeup.disconnect(); } catch {} makeup = null; }
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
       if (ac) { try { ac.close(); } catch {} ac = null; }
-      analyser = null; buf = null; smoothHz = 0; manualIdx = null;
+      analyser = null; buf = null; smoothHz = 0; prevF = 0; lockCount = 0;
+      manualIdx = null;
     },
     // Joue ~1,8 s le son de la corde `idx` (fondamentale + 2 harmoniques)
     // et verrouille l'aiguille sur cette corde.
@@ -194,5 +259,10 @@ function createTuner({ onUpdate, onError } = {}) {
     get manualIdx() { return manualIdx; },
     get running() { return !!ac; },
     get strings() { return STRINGS.slice(); },
+    // Crochets de test (algo pur, sans micro).
+    _detectPitch: detectPitch,
+    _preprocess: preprocess,
   };
 }
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { createTuner };
