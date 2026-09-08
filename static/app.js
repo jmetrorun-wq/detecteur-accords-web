@@ -30,6 +30,7 @@ const btnHistory      = document.getElementById('btn-history');
 const btnHistoryBack  = document.getElementById('btn-history-back');
 const btnTuner        = document.getElementById('btn-tuner');
 const btnTunerBack    = document.getElementById('btn-tuner-back');
+const btnTunerMic     = document.getElementById('btn-tuner-mic');
 const tunerNote       = document.getElementById('tuner-note');
 const tunerDetail     = document.getElementById('tuner-detail');
 const tunerNeedle     = document.getElementById('tuner-needle');
@@ -860,6 +861,36 @@ function onTunerError(err) {
   tunerError.textContent = (err && err.name === 'NotAllowedError')
     ? "Micro refusé — les sons de référence fonctionnent quand même. Autorise le micro pour l'aiguille."
     : `Micro indisponible : ${err ? err.message : 'erreur inconnue'} — sons de référence toujours actifs.`;
+  setMicButton(false);
+}
+
+// Bouton micro : sur iPhone, micro actif = sons de référence plus faibles
+// (iOS route la sortie vers l'écouteur). On laisse donc le choix.
+function setMicButton(on) {
+  btnTunerMic.classList.toggle('active', on);
+  btnTunerMic.textContent = on ? '🎤 Micro actif — couper' : '🎤 Activer le micro (aiguille)';
+}
+
+async function toggleTunerMic() {
+  if (tuner.micRunning) {
+    tuner.stop();
+    setMicButton(false);
+    tunerNote.textContent = '–';
+    tunerNote.className = 'tuner-note';
+    tunerNeedle.className = 'tuner-needle';
+    tunerStatus.classList.remove('in-tune');
+    tunerStatus.textContent = 'Touche une mécanique pour entendre la corde';
+    return;
+  }
+  tunerError.classList.add('hidden');
+  btnTunerMic.disabled = true;
+  tunerStatus.textContent = 'Autorise le micro…';
+  await tuner.start();
+  btnTunerMic.disabled = false;
+  if (tuner.micRunning) {
+    setMicButton(true);
+    tunerStatus.textContent = 'Joue une corde';
+  }
 }
 
 async function openTuner() {
@@ -871,17 +902,19 @@ async function openTuner() {
   tunerDetail.textContent = 'Touche une mécanique';
   tunerStatus.textContent = 'Touche une mécanique pour entendre la corde';
   tunerStatus.classList.remove('in-tune');
+  setMicButton(false);
   showScreen('tuner');
-  await tuner.start();
 }
 
 function closeTuner() {
-  tuner.stop();
+  tuner.release();
+  setMicButton(false);
   showScreen('upload');
 }
 
 btnTuner.addEventListener('click', openTuner);
 btnTunerBack.addEventListener('click', closeTuner);
+btnTunerMic.addEventListener('click', toggleTunerMic);
 
 // Barre défilante : surligne la case du temps en cours et fait glisser
 // la bande pour garder la lecture centrée. Le défilement est piloté

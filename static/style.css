@@ -953,6 +953,17 @@ html, body {
   min-height: 1.4em;
 }
 .tuner-status.in-tune { color: #34D399; }
+.tuner-mic-btn {
+  max-width: 320px;
+  margin-top: 1rem;
+  font-size: 0.95rem;
+  min-height: 48px;
+}
+.tuner-mic-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
 .tuner-error {
   margin-top: 1rem;
   color: #FF8A65;

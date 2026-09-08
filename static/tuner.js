@@ -43,18 +43,25 @@ function createTuner({ onUpdate, onError } = {}) {
   let inTuneSinceMs = 0, confirmed = false; // « clic » de validation (front montant)
   let audioUnlocked = false;    // iOS : contexte débloqué par un geste
 
+  // Catégorie de session audio iOS :
+  //  - 'playback'        : sortie forte (haut-parleur), MAIS bloque le micro ;
+  //  - 'play-and-record' : micro autorisé, mais sortie faible (écouteur).
+  // On reste en 'playback' pour l'accordage à l'oreille (sons de référence
+  // forts) et on ne bascule en 'play-and-record' que quand le micro tourne.
+  function setSession(cat) {
+    try { if (navigator.audioSession) navigator.audioSession.type = cat; } catch {}
+  }
+
   // Prépare/débloque la sortie audio. À appeler depuis un geste (tap) : crée
   // le contexte si besoin, le réveille, et joue un échantillon muet — sinon
   // iOS garde le contexte muet en PWA installée.
-  // Catégorie 'play-and-record' : compatible micro + sortie audible (la
-  // catégorie 'playback' bloquerait getUserMedia).
   function ensureAudio() {
     if (!ac) {
       const Ctor = window.AudioContext || window.webkitAudioContext;
       if (!Ctor) return false;
       ac = new Ctor();
     }
-    try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch {}
+    if (!analyser) setSession('playback');   // pas de micro actif → son fort
     if (ac.state === 'suspended') { try { ac.resume(); } catch {} }
     if (!audioUnlocked) {
       try {
@@ -246,6 +253,7 @@ function createTuner({ onUpdate, onError } = {}) {
     async start() {
       if (analyser) return;              // micro déjà en écoute
       if (!ensureAudio()) { onError && onError(new Error('Web Audio indisponible')); return; }
+      setSession('play-and-record');     // iOS : requis pour capter le micro
       try { await ac.resume(); } catch {}
       // Le micro peut échouer (refus) sans empêcher les tons de référence.
       try {
@@ -253,6 +261,7 @@ function createTuner({ onUpdate, onError } = {}) {
           audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
         });
       } catch (err) {
+        setSession('playback');          // retour au mode « son fort »
         onError && onError(err);
         return;
       }
@@ -278,10 +287,18 @@ function createTuner({ onUpdate, onError } = {}) {
       if (source) { try { source.disconnect(); } catch {} source = null; }
       if (makeup) { try { makeup.disconnect(); } catch {} makeup = null; }
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-      if (ac) { try { ac.close(); } catch {} ac = null; }
       analyser = null; buf = null; smoothHz = 0; prevF = 0; lockCount = 0;
-      inTuneSinceMs = 0; confirmed = false; audioUnlocked = false;
+      inTuneSinceMs = 0; confirmed = false;
       manualIdx = null;
+      // Micro coupé : on repasse en sortie forte (garde le contexte ouvert
+      // pour que les sons de référence restent débloqués).
+      if (ac && ac.state !== 'closed') setSession('playback');
+    },
+    // Fermeture complète de l'accordeur (on quitte l'écran) : libère tout.
+    release() {
+      this.stop();
+      if (ac) { try { ac.close(); } catch {} ac = null; }
+      audioUnlocked = false;
     },
     // Joue ~1,8 s le son de la corde `idx` (fondamentale + 2 harmoniques)
     // et verrouille l'aiguille sur cette corde.
@@ -315,6 +332,7 @@ function createTuner({ onUpdate, onError } = {}) {
     },
     get manualIdx() { return manualIdx; },
     get running() { return !!ac; },
+    get micRunning() { return !!analyser; },
     get strings() { return STRINGS.slice(); },
     // Crochets de test (algo pur, sans micro).
     _detectPitch: detectPitch,
